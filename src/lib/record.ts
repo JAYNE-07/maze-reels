@@ -1,5 +1,8 @@
-// Record an animated canvas into a downloadable video. Prefers MP4
-// (Instagram-friendly) where the browser supports it, falls back to WebM.
+// Record an animated canvas (and optionally a procedural music track)
+// into a downloadable video. Prefers MP4 (Instagram-friendly) where the
+// browser supports it, falls back to WebM.
+
+import { setupAnxiousMusic } from './music';
 
 export interface RecordResult {
   blob: Blob;
@@ -12,6 +15,8 @@ function pickMime(): { mime: string; ext: string } {
     'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
     'video/mp4;codecs=avc1.42E01E',
     'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
     'video/webm;codecs=vp9',
     'video/webm;codecs=vp8',
     'video/webm',
@@ -32,18 +37,45 @@ export async function recordCanvas(
   fps: number,
   durationSec: number,
   onFrame: (t: number) => void,
+  withAudio = true,
 ): Promise<RecordResult> {
-  // Draw the initial frame BEFORE the stream begins so the first sample
-  // is meaningful rather than blank.
+  // Draw the initial frame BEFORE the stream begins.
   onFrame(0);
 
-  const stream = (canvas as unknown as {
+  const videoStream = (canvas as unknown as {
     captureStream: (fps: number) => MediaStream;
   }).captureStream(fps);
+
+  // Set up procedural audio. Audio capture and recording start together so
+  // the soundtrack aligns with the visuals frame-for-frame.
+  let audioCtx: AudioContext | null = null;
+  let combinedStream: MediaStream = videoStream;
+  if (withAudio) {
+    try {
+      const AC =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      audioCtx = new AC();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      const dest = audioCtx.createMediaStreamDestination();
+      setupAnxiousMusic(audioCtx, dest, durationSec);
+      combinedStream = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...dest.stream.getAudioTracks(),
+      ]);
+    } catch {
+      // Audio failed — fall back to silent video.
+      audioCtx = null;
+      combinedStream = videoStream;
+    }
+  }
+
   const { mime, ext } = pickMime();
-  const recorder = new MediaRecorder(stream, {
+  const recorder = new MediaRecorder(combinedStream, {
     mimeType: mime,
     videoBitsPerSecond: 8_000_000,
+    audioBitsPerSecond: 128_000,
   });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => {
@@ -68,10 +100,10 @@ export async function recordCanvas(
     };
     requestAnimationFrame(tick);
   });
-  // Let the recorder collect any trailing chunk before stopping.
   await new Promise((r) => setTimeout(r, 150));
   recorder.stop();
   await stopped;
-  stream.getTracks().forEach((tr) => tr.stop());
+  combinedStream.getTracks().forEach((tr) => tr.stop());
+  if (audioCtx) await audioCtx.close();
   return { blob: new Blob(chunks, { type: mime }), mimeType: mime, extension: ext };
 }

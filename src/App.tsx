@@ -11,7 +11,7 @@ const REEL_W = 1080;
 const REEL_H = 1920;
 const REEL_SECONDS = 12;
 const REEL_FPS = 30;
-const COLS_FOR_REEL = 30;
+const COLS_FOR_REEL = 20; // easier maze — viewers can actually solve it in the think-time
 
 // Subject-agnostic so a missed AI fetch never makes the title lie.
 const TITLES = [
@@ -58,6 +58,7 @@ export default function App() {
   const [count, setCount] = useState(5);
   const [cta, setCta] = useState('');
   const [handle, setHandle] = useState('@the.mastery.method');
+  const [withAudio, setWithAudio] = useState(true);
   const [status, setStatus] = useState<Status>('idle');
   const [progress, setProgress] = useState('');
   const [log, setLog] = useState<string[]>([]);
@@ -204,8 +205,12 @@ export default function App() {
       const sceneFinal = scene;
       let result;
       try {
-        result = await recordCanvas(cv, REEL_FPS, REEL_SECONDS, (t) =>
-          drawFrame(ctx, sceneFinal, t),
+        result = await recordCanvas(
+          cv,
+          REEL_FPS,
+          REEL_SECONDS,
+          (t) => drawFrame(ctx, sceneFinal, t),
+          withAudio,
         );
       } catch (e) {
         appendLog(`✗ reel ${i + 1}: ${e instanceof Error ? e.message : 'recording failed'}`);
@@ -233,7 +238,7 @@ export default function App() {
     setProgress('');
     setStatus('done');
     appendLog(`Done — ${made} ready, ${skipped} skipped`);
-  }, [keyword, count, cta, handle, status, reels]);
+  }, [keyword, count, cta, handle, status, reels, withAudio]);
 
   const cancel = () => {
     cancelRef.current = true;
@@ -289,6 +294,18 @@ export default function App() {
         <label className="row">
           <span>Your @handle</span>
           <input value={handle} onChange={(e) => setHandle(e.target.value)} />
+        </label>
+        <label className="row check">
+          <span>Anxious music</span>
+          <input
+            type="checkbox"
+            checked={withAudio}
+            onChange={(e) => setWithAudio(e.target.checked)}
+          />
+          <em>
+            Adds a procedural ticking/heartbeat backing track to each reel.
+            Uncheck for silent reels.
+          </em>
         </label>
 
         <p className="note">
