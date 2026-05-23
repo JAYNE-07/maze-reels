@@ -278,15 +278,15 @@ function drawBanner(
   const { stroke, shadow } = contrast(palette.ctaBg);
   ctx.fillStyle = palette.ctaBg;
   ctx.strokeStyle = stroke;
-  ctx.lineWidth = 10;
+  ctx.lineWidth = 14;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
     '900 70px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
   ctx.shadowColor = shadow;
-  ctx.shadowBlur = 28;
-  ctx.shadowOffsetY = 6;
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 8;
   const single = text.toUpperCase();
   ctx.strokeText(single, cx, cy);
   ctx.fillText(single, cx, cy);
@@ -307,15 +307,15 @@ function drawTitle(
   const { stroke, shadow } = contrast(palette.text);
   ctx.fillStyle = palette.text;
   ctx.strokeStyle = stroke;
-  ctx.lineWidth = 8;
+  ctx.lineWidth = 12;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.font =
     '800 56px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
   ctx.shadowColor = shadow;
-  ctx.shadowBlur = 22;
-  ctx.shadowOffsetY = 5;
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 6;
   const lines = wrapToLines(ctx, text, 960);
   for (let i = 0; i < lines.length; i++) {
     const y = cy + slide + i * 64;
@@ -683,15 +683,15 @@ function drawCtaPop(
   const { stroke: ctaStroke, shadow: ctaShadow } = contrast(palette.ctaBg);
   ctx.fillStyle = palette.ctaBg;
   ctx.strokeStyle = ctaStroke;
-  ctx.lineWidth = 10;
+  ctx.lineWidth = 14;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
     '800 58px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
   ctx.shadowColor = ctaShadow;
-  ctx.shadowBlur = 30;
-  ctx.shadowOffsetY = 8;
+  ctx.shadowBlur = 22;
+  ctx.shadowOffsetY = 9;
   // Force into ~2 lines by clamping the wrap width and splitting on natural
   // breaks ("?", " - ", " — ") when the CTA includes them.
   const lines = splitCtaLines(ctx, cta, 540);
@@ -765,11 +765,14 @@ function lum(hex: string): number {
 }
 
 /** Stroke + shadow tuned to actually CONTRAST whatever the fill color is.
- *  Light fill → dark outline/glow. Dark fill → light outline/glow. */
+ *  Light fill → solid black outline + dark soft glow.
+ *  Dark fill  → solid white outline + light soft glow.
+ *  Solid (non-alpha) outline guarantees a crisp readable edge regardless
+ *  of which gradient stop the text lands on. */
 function contrast(fillHex: string): { stroke: string; shadow: string } {
   return lum(fillHex) > 0.55
-    ? { stroke: 'rgba(0,0,0,0.85)', shadow: 'rgba(0,0,0,0.7)' }
-    : { stroke: 'rgba(255,255,255,0.9)', shadow: 'rgba(255,255,255,0.55)' };
+    ? { stroke: '#000000', shadow: 'rgba(0,0,0,0.65)' }
+    : { stroke: '#ffffff', shadow: 'rgba(255,255,255,0.45)' };
 }
 
 function mix(a: string, b: string, t: number): string {
