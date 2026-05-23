@@ -6,10 +6,13 @@
 //   4. CTA pop — bright sawtooth sweep + triangle ding at the final pop.
 
 export interface MusicTiming {
-  /** Seconds from t=0 when the title bounces in */
+  /** Seconds from t=0 when the title bounces in. */
   titlePopAt: number;
   /** Seconds from t=0 when the 3-2-1 countdown begins (one beep per second). */
   countdownStart: number;
+  /** Seconds from t=0 when the mascot starts walking. The anxious clock
+   *  bed cuts out here so the solution reveal plays in silence. */
+  walkStart: number;
   /** Seconds from t=0 when the CTA pops in. */
   ctaAt: number;
 }
@@ -34,7 +37,9 @@ export function setupReelMusic(
   compressor.ratio.value = 4;
   master.connect(compressor).connect(out);
 
-  scheduleAnxiousBed(ctx, master, start, durationSec);
+  // The anxious bed only runs up to the moment the solution starts
+  // walking — silence frames the reveal, then the CTA pop punctuates it.
+  scheduleAnxiousBed(ctx, master, start, Math.min(durationSec, timing.walkStart));
   scheduleTitlePop(ctx, master, start + timing.titlePopAt);
   for (let i = 0; i < 3; i++) {
     const beepAt = start + timing.countdownStart + i;

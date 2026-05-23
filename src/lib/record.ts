@@ -58,6 +58,7 @@ export async function recordCanvas(
       const timing: MusicTiming = musicTiming ?? {
         titlePopAt: 0.5,
         countdownStart: 6.5,
+        walkStart: 9.5,
         ctaAt: 12.0,
       };
       musicHandle = setupReelMusic(audioCtx, dest, durationSec, timing);

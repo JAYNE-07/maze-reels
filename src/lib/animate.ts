@@ -585,16 +585,16 @@ function drawCountdown(
   }
 
   // Land in the cleared band between title (faded out) and the maze top.
-  // Banner sits at y=130, title at y=240, maze starts at y=470, so the
-  // countdown digit at y=360 with 130px font (bbox ~y 295-425) sits
-  // entirely below the banner and above the maze.
+  // Banner sits at y=130 (bottom ~165), maze starts at y=470, so a
+  // 200px-font digit at y=365 (bbox ~y 265-465) fits with ~100px clear
+  // above and ~5px clear below.
   const cx = width / 2;
-  const cy = 360;
+  const cy = 365;
 
   // pulsing ring behind the digit
   ctx.save();
   ctx.globalAlpha = alpha * 0.85;
-  const ringR = 95 * scale;
+  const ringR = 140 * scale;
   const ring = ctx.createRadialGradient(cx, cy, ringR * 0.15, cx, cy, ringR);
   ring.addColorStop(0, palette.ctaBg);
   ring.addColorStop(0.6, palette.ctaBg + '00');
@@ -618,7 +618,7 @@ function drawCountdown(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    '900 130px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+    '900 200px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
   ctx.shadowColor = 'rgba(0,0,0,0.65)';
   ctx.shadowBlur = 40;
   ctx.shadowOffsetY = 10;
