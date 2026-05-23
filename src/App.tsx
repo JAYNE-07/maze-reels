@@ -15,6 +15,7 @@ const MUSIC_TIMING: MusicTiming = {
   titlePopAt: REEL_TIMING.titleStart,
   countdownStart: REEL_TIMING.countdownStart,
   walkStart: REEL_TIMING.walkStart,
+  walkEnd: REEL_TIMING.walkEnd,
   ctaAt: REEL_TIMING.ctaStart,
 };
 const REEL_FPS = 30;

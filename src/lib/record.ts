@@ -78,6 +78,7 @@ export async function recordCanvas(
         titlePopAt: 0.5,
         countdownStart: 6.5,
         walkStart: 9.5,
+        walkEnd: 12.0,
         ctaAt: 12.0,
       };
       musicHandle = setupReelMusic(audioCtx, dest, durationSec, timing);

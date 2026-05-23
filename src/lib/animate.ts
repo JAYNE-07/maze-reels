@@ -146,7 +146,9 @@ export function drawFrame(
   const mw = spanC * cell;
   const mh = spanR * cell;
   const mx = (width - mw) / 2;
-  const my = mazeTop + (mazeAreaH - mh) / 2;
+  // Top-align inside the maze area — visually the silhouette sits closer
+  // to the countdown and title row rather than floating in the middle.
+  const my = mazeTop + Math.min(20, (mazeAreaH - mh) * 0.05);
 
   const {
     bannerEnd,
@@ -584,12 +586,12 @@ function drawCountdown(
     scale = 1 + k * 0.4;
   }
 
-  // Land in the cleared band between title (faded out) and the maze top.
-  // Banner sits at y=130 (bottom ~165), maze starts at y=470, so a
-  // 200px-font digit at y=365 (bbox ~y 265-465) fits with ~100px clear
-  // above and ~5px clear below.
+  // Drop the digit into the gap between the faded title and the
+  // silhouette walls. Silhouette is now top-aligned so the walls sit
+  // ~70-100 px below the countdown — feels like one connected layout
+  // instead of "title floating, big gap, then maze".
   const cx = width / 2;
-  const cy = 365;
+  const cy = 430;
 
   // pulsing ring behind the digit
   ctx.save();

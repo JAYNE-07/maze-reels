@@ -11,8 +11,10 @@ export interface MusicTiming {
   /** Seconds from t=0 when the 3-2-1 countdown begins (one beep per second). */
   countdownStart: number;
   /** Seconds from t=0 when the mascot starts walking. The anxious clock
-   *  bed cuts out here so the solution reveal plays in silence. */
+   *  bed fades out by this point; the upbeat walk arpeggio fades in. */
   walkStart: number;
+  /** Seconds from t=0 when the mascot reaches the goal — walk music ends. */
+  walkEnd: number;
   /** Seconds from t=0 when the CTA pops in. */
   ctaAt: number;
 }
@@ -60,6 +62,21 @@ export function setupReelMusic(
     const freq = [550, 700, 880][i];
     scheduleCountdownBeep(ctx, master, beepAt, freq);
   }
+
+  // Walk reveal music — different energy from the anxious bed. Plays
+  // through its own gain so it can fade in cleanly after the bed has
+  // ended and fade out cleanly before the CTA pop.
+  const walkGain = ctx.createGain();
+  walkGain.gain.value = 0;
+  walkGain.connect(master);
+  const walkStartAt = start + timing.walkStart;
+  const walkEndAt = start + timing.walkEnd;
+  walkGain.gain.setValueAtTime(0, walkStartAt - 0.05);
+  walkGain.gain.linearRampToValueAtTime(1, walkStartAt + 0.15);
+  walkGain.gain.linearRampToValueAtTime(1, walkEndAt - 0.2);
+  walkGain.gain.linearRampToValueAtTime(0, walkEndAt);
+  scheduleWalkMusic(ctx, walkGain, walkStartAt, walkEndAt);
+
   scheduleCtaPop(ctx, master, start + timing.ctaAt);
 
   return {
@@ -68,11 +85,56 @@ export function setupReelMusic(
         master.disconnect();
         compressor.disconnect();
         bedGain.disconnect();
+        walkGain.disconnect();
       } catch {
         /* already disconnected */
       }
     },
   };
+}
+
+// ---- Walk reveal: bright triangle arpeggio + sub bass pulse ----------
+function scheduleWalkMusic(
+  ctx: AudioContext,
+  out: AudioNode,
+  walkStart: number,
+  walkEnd: number,
+) {
+  const totalSec = Math.max(0.5, walkEnd - walkStart);
+  // Ascending-descending triangle arpeggio — C5 E5 G5 B5 G5 E5
+  const notes = [523, 659, 784, 988, 784, 659];
+  const noteDur = 0.18;
+  const notesCount = Math.floor(totalSec / noteDur);
+  for (let i = 0; i < notesCount; i++) {
+    const when = walkStart + i * noteDur;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = notes[i % notes.length];
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(0.13, when + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.001, when + noteDur * 0.95);
+    osc.connect(g).connect(out);
+    osc.start(when);
+    osc.stop(when + noteDur + 0.02);
+  }
+  // Sub bass pulse on every quarter note for forward momentum
+  const beatDur = 0.36;
+  const beatsCount = Math.floor(totalSec / beatDur);
+  for (let i = 0; i < beatsCount; i++) {
+    const when = walkStart + i * beatDur;
+    const bass = ctx.createOscillator();
+    bass.type = 'sine';
+    bass.frequency.setValueAtTime(110, when);
+    bass.frequency.exponentialRampToValueAtTime(55, when + 0.08);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(0.2, when + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.16);
+    bass.connect(g).connect(out);
+    bass.start(when);
+    bass.stop(when + 0.2);
+  }
 }
 
 // ---- 2. anxious background bed -- clock ticking, dominant -------------
