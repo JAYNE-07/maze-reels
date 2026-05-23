@@ -57,7 +57,7 @@ export default function App() {
   const [keyword, setKeyword] = useState('animals');
   const [count, setCount] = useState(5);
   const [cta, setCta] = useState('');
-  const [handle, setHandle] = useState('@the.mastery.method');
+  const [handle, setHandle] = useState('@iqexploratorium');
   const [withAudio, setWithAudio] = useState(true);
   const [status, setStatus] = useState<Status>('idle');
   const [progress, setProgress] = useState('');
@@ -66,6 +66,7 @@ export default function App() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cancelRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (status !== 'idle' || !canvasRef.current) return;
@@ -132,6 +133,20 @@ export default function App() {
     const kw = keyword.trim();
     if (!kw || status === 'working') return;
     cancelRef.current = false;
+    // Create the AudioContext synchronously here, INSIDE the click handler,
+    // so the browser's user-activation requirement is satisfied. Reusing it
+    // for every reel in the batch — long awaits later won't break it.
+    if (withAudio && !audioCtxRef.current) {
+      try {
+        const AC =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        audioCtxRef.current = new AC();
+      } catch {
+        audioCtxRef.current = null;
+      }
+    }
     setStatus('working');
     // start fresh
     reels.forEach((r) => URL.revokeObjectURL(r.url));
@@ -210,7 +225,7 @@ export default function App() {
           REEL_FPS,
           REEL_SECONDS,
           (t) => drawFrame(ctx, sceneFinal, t),
-          withAudio,
+          withAudio ? audioCtxRef.current : null,
         );
       } catch (e) {
         appendLog(`✗ reel ${i + 1}: ${e instanceof Error ? e.message : 'recording failed'}`);

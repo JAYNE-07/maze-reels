@@ -37,7 +37,7 @@ export async function recordCanvas(
   fps: number,
   durationSec: number,
   onFrame: (t: number) => void,
-  withAudio = true,
+  audioCtx?: AudioContext | null,
 ): Promise<RecordResult> {
   // Draw the initial frame BEFORE the stream begins.
   onFrame(0);
@@ -46,17 +46,12 @@ export async function recordCanvas(
     captureStream: (fps: number) => MediaStream;
   }).captureStream(fps);
 
-  // Set up procedural audio. Audio capture and recording start together so
-  // the soundtrack aligns with the visuals frame-for-frame.
-  let audioCtx: AudioContext | null = null;
+  // Combine with audio if a (caller-provided, gesture-warm) AudioContext
+  // was passed in. Caller creates it inside the click handler so the
+  // browser's user-activation rule is satisfied.
   let combinedStream: MediaStream = videoStream;
-  if (withAudio) {
+  if (audioCtx) {
     try {
-      const AC =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
-      audioCtx = new AC();
       if (audioCtx.state === 'suspended') await audioCtx.resume();
       const dest = audioCtx.createMediaStreamDestination();
       setupAnxiousMusic(audioCtx, dest, durationSec);
@@ -65,18 +60,28 @@ export async function recordCanvas(
         ...dest.stream.getAudioTracks(),
       ]);
     } catch {
-      // Audio failed — fall back to silent video.
-      audioCtx = null;
+      // Audio failed — fall back to silent video so the reel still records.
       combinedStream = videoStream;
     }
   }
 
   const { mime, ext } = pickMime();
-  const recorder = new MediaRecorder(combinedStream, {
-    mimeType: mime,
-    videoBitsPerSecond: 8_000_000,
-    audioBitsPerSecond: 128_000,
-  });
+  let recorder: MediaRecorder;
+  try {
+    recorder = new MediaRecorder(combinedStream, {
+      mimeType: mime,
+      videoBitsPerSecond: 8_000_000,
+      audioBitsPerSecond: 128_000,
+    });
+  } catch {
+    // If the chosen mime can't accept audio, retry with the silent stream
+    // so the reel still saves rather than throwing the whole batch away.
+    combinedStream = videoStream;
+    recorder = new MediaRecorder(videoStream, {
+      mimeType: mime,
+      videoBitsPerSecond: 8_000_000,
+    });
+  }
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size) chunks.push(e.data);
@@ -104,6 +109,6 @@ export async function recordCanvas(
   recorder.stop();
   await stopped;
   combinedStream.getTracks().forEach((tr) => tr.stop());
-  if (audioCtx) await audioCtx.close();
+  // Caller manages the AudioContext lifecycle so it can be reused across reels.
   return { blob: new Blob(chunks, { type: mime }), mimeType: mime, extension: ext };
 }
