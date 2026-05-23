@@ -205,3 +205,81 @@ button:disabled { opacity: 0.5; cursor: default; }
 .modal-actions button {
   flex: 1;
 }
+
+/* Generated reels gallery */
+.gallery {
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.gallery-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.gallery-head h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+.gallery-head > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gallery-head button { padding: 9px 14px; font-size: 13px; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.card:hover { transform: translateY(-2px); }
+.card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.card video {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  background: #000;
+  border-radius: 10px;
+  display: block;
+}
+.card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.card-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.card-meta {
+  color: var(--muted);
+  flex: 1;
+}
+.card-meta strong { color: var(--text); }
+.card-row button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.card-name {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  word-break: break-all;
+  line-height: 1.3;
+}

@@ -9,45 +9,48 @@ import { recordCanvas } from './lib/record';
 
 const REEL_W = 1080;
 const REEL_H = 1920;
-const REEL_SECONDS = 8.5;
+const REEL_SECONDS = 12;
 const REEL_FPS = 30;
 const COLS_FOR_REEL = 30;
 
-const TITLE_TEMPLATES: ((s: string) => string)[] = [
-  (s) => `Help the ${s} find the way!`,
-  (s) => `Can the ${s} make it home?`,
-  (s) => `Trace the ${s}'s path`,
-  (s) => `Find the path for this ${s}`,
-  (s) => `Guide the ${s} to the goal!`,
-  (s) => `Will the ${s} make it?`,
+// Subject-agnostic so a missed AI fetch never makes the title lie.
+const TITLES = [
+  'Find the way!',
+  'Trace the path',
+  'Can you make it?',
+  'Solve this maze',
+  'Tap to try',
+  'Reach the goal!',
 ];
 
 const BANNER = 'Can you solve this?';
 
+// Conversational, not hard-sell.
 const RANDOM_CTAS = [
-  'Get the book!',
-  'Link in bio →',
-  'Save for later',
-  'Tap the link!',
-  '100+ more inside',
-  'Grab the book',
-  "Don't miss out",
-  'Full book →',
-  'Free preview',
-  'More mazes →',
+  'Wanna try? Link in bio',
+  'Loved this? More in bio',
+  'Try the full book ↓',
+  'Tap the link to try',
+  'Save it, solve it later',
+  'Stuck? Try the book',
+  'Want more like this?',
+  'Check the link in bio',
+  '100+ more inside ↓',
+  'Got it? More in bio',
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-type Status = 'idle' | 'working' | 'done' | 'error';
+type Status = 'idle' | 'working' | 'done';
 
-interface PendingReel {
+interface CompletedReel {
+  id: string;
+  index: number;
+  blob: Blob;
   url: string;
   filename: string;
-  blob: Blob;
-  mime: string;
-  index: number;
-  total: number;
+  paletteName: string;
+  selected: boolean;
 }
 
 export default function App() {
@@ -58,14 +61,11 @@ export default function App() {
   const [status, setStatus] = useState<Status>('idle');
   const [progress, setProgress] = useState('');
   const [log, setLog] = useState<string[]>([]);
-
-  const [pending, setPending] = useState<PendingReel | null>(null);
-  const decisionRef = useRef<((save: boolean) => void) | null>(null);
+  const [reels, setReels] = useState<CompletedReel[]>([]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cancelRef = useRef(false);
 
-  // idle preview frame
   useEffect(() => {
     if (status !== 'idle' || !canvasRef.current) return;
     const cv = canvasRef.current;
@@ -87,8 +87,15 @@ export default function App() {
     ctx.fillText('preview appears here', REEL_W / 2, REEL_H * 0.52);
   }, [status]);
 
+  // revoke any object URLs when reels are cleared / on unmount
+  useEffect(() => {
+    return () => {
+      reels.forEach((r) => URL.revokeObjectURL(r.url));
+    };
+  }, [reels]);
+
   const appendLog = (line: string) =>
-    setLog((arr) => [...arr.slice(-40), line]);
+    setLog((arr) => [...arr.slice(-60), line]);
 
   const downloadBlob = (blob: Blob, name: string) => {
     const url = URL.createObjectURL(blob);
@@ -102,37 +109,54 @@ export default function App() {
   const slugify = (s: string) =>
     s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'reel';
 
+  const clearAll = () => {
+    reels.forEach((r) => URL.revokeObjectURL(r.url));
+    setReels([]);
+    setStatus('idle');
+    setLog([]);
+  };
+
+  const toggleSelect = (id: string) =>
+    setReels((arr) => arr.map((r) => (r.id === id ? { ...r, selected: !r.selected } : r)));
+
+  const downloadSelected = async () => {
+    const chosen = reels.filter((r) => r.selected);
+    for (const r of chosen) {
+      downloadBlob(r.blob, r.filename);
+      await sleep(350); // browser politeness gap between downloads
+    }
+  };
+
   const generate = useCallback(async () => {
     const kw = keyword.trim();
     if (!kw || status === 'working') return;
     cancelRef.current = false;
     setStatus('working');
+    // start fresh
+    reels.forEach((r) => URL.revokeObjectURL(r.url));
+    setReels([]);
     setLog([]);
     const cv = canvasRef.current!;
     cv.width = REEL_W;
     cv.height = REEL_H;
     const ctx = cv.getContext('2d')!;
     const baseSeed = Math.floor(Math.random() * 1e9);
-    let made = 0;
-    let skipped = 0;
 
-    // pool cursor — advance through subject indices across the whole run so
-    // a single failing subject doesn't trap multiple slots.
     const usedSubj = new Set<number>();
     let nextSubj = 0;
+    let made = 0;
+    let skipped = 0;
 
     for (let i = 0; i < count; i++) {
       if (cancelRef.current) break;
 
       const palette = pick(PALETTES, i);
       const reelCta = cta.trim() || RANDOM_CTAS[Math.floor(Math.random() * RANDOM_CTAS.length)];
+      const title = TITLES[i % TITLES.length];
 
       setProgress(`Reel ${i + 1} of ${count} — finding a shape…`);
       let scene: Scene | null = null;
-      let usedSubjects: string[] = [];
 
-      // up to 8 attempts, each pulling a fresh subject index from the pool.
-      // Cooldowns grow if the AI keeps rejecting (rate-limit recovery).
       for (let attempt = 0; attempt < 8 && !scene; attempt++) {
         if (cancelRef.current) break;
         while (usedSubj.has(nextSubj)) nextSubj++;
@@ -142,7 +166,6 @@ export default function App() {
         const aiPrompt = subjectFor(kw, subjIdx, baseSeed);
         const base = baseSubjectFor(kw, subjIdx, baseSeed);
         const seed = ((baseSeed + subjIdx * 131 + attempt * 977) >>> 0) || 1;
-        usedSubjects.push(base);
         try {
           const [sil, markers] = await Promise.all([
             fetchSilhouette(aiPrompt, seed, { iconSearch: base }),
@@ -154,7 +177,6 @@ export default function App() {
             COLS_FOR_REEL,
             seed,
           );
-          const title = pick(TITLE_TEMPLATES, i)(base);
           scene = buildScene(
             REEL_W,
             REEL_H,
@@ -166,92 +188,72 @@ export default function App() {
             reelCta,
             handle,
             REEL_SECONDS,
+            seed,
           );
         } catch {
-          // Back off harder as failures pile up — gives Pollinations a chance
-          // to clear its rate-limit window before the next try.
           await sleep(attempt < 2 ? 800 : 3500);
         }
       }
       if (!scene) {
-        appendLog(
-          `✗ reel ${i + 1}: skipped after trying ${usedSubjects.slice(0, 4).join(', ')}${usedSubjects.length > 4 ? '…' : ''}`,
-        );
+        appendLog(`✗ reel ${i + 1}: couldn't find a shape — skipped`);
         skipped++;
         continue;
       }
 
-      setProgress(
-        `Reel ${i + 1} of ${count} — recording ${REEL_SECONDS}s (${palette.name})`,
-      );
-      let result;
+      setProgress(`Reel ${i + 1} of ${count} — recording 12 s (${palette.name})`);
       const sceneFinal = scene;
+      let result;
       try {
         result = await recordCanvas(cv, REEL_FPS, REEL_SECONDS, (t) =>
           drawFrame(ctx, sceneFinal, t),
         );
       } catch (e) {
         appendLog(`✗ reel ${i + 1}: ${e instanceof Error ? e.message : 'recording failed'}`);
+        skipped++;
         continue;
       }
 
-      const slug = slugify(scene.title);
-      const filename = `${String(i + 1).padStart(2, '0')}-${slug}.${result.extension}`;
-
-      // Hand off to the user for a preview decision before downloading.
-      setProgress(`Reel ${i + 1} ready — preview to save or skip`);
       const url = URL.createObjectURL(result.blob);
-      const save = await new Promise<boolean>((resolve) => {
-        decisionRef.current = resolve;
-        setPending({
-          url,
-          filename,
-          blob: result.blob,
-          mime: result.mimeType,
-          index: i + 1,
-          total: count,
-        });
-      });
-      decisionRef.current = null;
-      setPending(null);
-      URL.revokeObjectURL(url);
+      const filename = `${String(i + 1).padStart(2, '0')}-${slugify(title)}.${result.extension}`;
+      const completed: CompletedReel = {
+        id: `${baseSeed}-${i}`,
+        index: i + 1,
+        blob: result.blob,
+        url,
+        filename,
+        paletteName: palette.name,
+        selected: true,
+      };
+      setReels((arr) => [...arr, completed]);
+      appendLog(`✓ reel ${i + 1}: ready (${(result.blob.size / 1e6).toFixed(1)} MB, ${palette.name})`);
+      made++;
 
-      if (save) {
-        downloadBlob(result.blob, filename);
-        appendLog(
-          `✓ reel ${i + 1}: saved as ${filename} (${(result.blob.size / 1e6).toFixed(1)} MB)`,
-        );
-        made++;
-      } else {
-        appendLog(`— reel ${i + 1}: discarded`);
-        skipped++;
-      }
-
-      // small breather between reels for the AI service
-      if (i < count - 1) await sleep(1200);
+      if (i < count - 1) await sleep(900);
     }
     setProgress('');
-    setStatus(cancelRef.current ? 'idle' : 'done');
-    appendLog(`Done — ${made} saved, ${skipped} skipped`);
-  }, [keyword, count, cta, handle, status]);
+    setStatus('done');
+    appendLog(`Done — ${made} ready, ${skipped} skipped`);
+  }, [keyword, count, cta, handle, status, reels]);
 
   const cancel = () => {
     cancelRef.current = true;
-    if (decisionRef.current) decisionRef.current(false);
   };
 
   const ctaPlaceholder = useMemo(
-    () => `random per reel (${RANDOM_CTAS.slice(0, 3).join(' / ')}…)`,
+    () => `random per reel (e.g. "Wanna try? Link in bio")`,
     [],
   );
+
+  const selectedCount = reels.filter((r) => r.selected).length;
 
   return (
     <div className="app">
       <header>
         <h1>Maze Reels Generator</h1>
         <p className="sub">
-          9:16 reels for Instagram — themed maze, viewer gets think-time, then the mascot
-          walks the solution. Confirm each one before saving.
+          9:16 reels for Instagram — themed maze, ~6 s for viewers to try
+          solving, then the mascot walks the path. All reels generate first,
+          then you pick which to save.
         </p>
       </header>
 
@@ -290,19 +292,22 @@ export default function App() {
         </label>
 
         <p className="note">
-          Leave CTA blank for a random call-to-action per reel. Recording is
-          real-time (~{Math.ceil(REEL_SECONDS)} s per reel) plus the AI fetch.
-          After each reel you'll see a preview and choose <strong>Save</strong>{' '}
-          or <strong>Skip</strong>.
+          Each reel is 12 s (5–6 s think-time + walk + CTA pop) at 1080×1920.
+          Leave CTA blank to randomize per reel. Recording is real-time so
+          {' '}{count} reel{count === 1 ? '' : 's'} take ~{count * 13} s plus
+          AI fetch.
         </p>
 
         <div className="row actions">
           {status !== 'working' ? (
             <button className="primary" onClick={generate} disabled={!keyword.trim()}>
-              Generate reels
+              {status === 'done' ? 'Generate another batch' : 'Generate reels'}
             </button>
           ) : (
             <button onClick={cancel}>Stop</button>
+          )}
+          {reels.length > 0 && status !== 'working' && (
+            <button onClick={clearAll}>Clear all</button>
           )}
         </div>
       </div>
@@ -322,32 +327,73 @@ export default function App() {
         )}
       </div>
 
-      {pending && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>
-              Reel {pending.index} / {pending.total}
-            </h3>
-            <video
-              key={pending.url}
-              src={pending.url}
-              controls
-              autoPlay
-              loop
-              playsInline
-            />
-            <p className="modal-filename">{pending.filename}</p>
-            <div className="modal-actions">
+      {reels.length > 0 && (
+        <section className="gallery">
+          <div className="gallery-head">
+            <h2>
+              Generated reels — {selectedCount} of {reels.length} selected
+            </h2>
+            <div>
+              <button
+                onClick={() =>
+                  setReels((arr) => arr.map((r) => ({ ...r, selected: true })))
+                }
+              >
+                Select all
+              </button>
+              <button
+                onClick={() =>
+                  setReels((arr) => arr.map((r) => ({ ...r, selected: false })))
+                }
+              >
+                Select none
+              </button>
               <button
                 className="primary"
-                onClick={() => decisionRef.current?.(true)}
+                disabled={selectedCount === 0}
+                onClick={downloadSelected}
               >
-                Save
+                Download {selectedCount}
               </button>
-              <button onClick={() => decisionRef.current?.(false)}>Skip</button>
             </div>
           </div>
-        </div>
+          <div className="grid">
+            {reels.map((r) => (
+              <label
+                key={r.id}
+                className={'card' + (r.selected ? ' on' : '')}
+              >
+                <video
+                  src={r.url}
+                  muted
+                  loop
+                  autoPlay
+                  playsInline
+                  preload="auto"
+                />
+                <div className="card-row">
+                  <input
+                    type="checkbox"
+                    checked={r.selected}
+                    onChange={() => toggleSelect(r.id)}
+                  />
+                  <span className="card-meta">
+                    <strong>#{r.index}</strong> · {r.paletteName}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      downloadBlob(r.blob, r.filename);
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+                <code className="card-name">{r.filename}</code>
+              </label>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

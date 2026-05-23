@@ -1,5 +1,6 @@
-// Single 9:16 reel frame renderer. Timeline gives viewers think-time
-// before the mascot starts walking, then a pop-style CTA at the end.
+// 9:16 reel renderer. Longer 12-second timeline with generous think-time,
+// animated trail, bobbing title, confetti at the goal, and friendly
+// fallback markers so a missed AI fetch still looks intentional.
 
 import { hasWall, solvePath, type Maze } from './maze';
 import type { Markers, MarkerImg } from './markers';
@@ -11,12 +12,14 @@ export interface Scene {
   maze: Maze;
   markers: Markers;
   palette: Palette;
-  banner: string;   // small label at the very top, e.g. "CAN YOU SOLVE THIS?"
-  title: string;    // main theme-specific headline
-  cta: string;      // pop text near the bottom
-  handle: string;   // optional @handle under the CTA
+  banner: string;
+  title: string;
+  cta: string;
+  handle: string;
   duration: number;
   solutionPath: number[];
+  // bookkeeping for confetti seeding
+  seedSalt: number;
 }
 
 const MARGIN_CELLS = 2;
@@ -32,6 +35,7 @@ export function buildScene(
   cta: string,
   handle: string,
   duration: number,
+  seedSalt = 1,
 ): Scene {
   return {
     width,
@@ -45,6 +49,7 @@ export function buildScene(
     handle,
     duration,
     solutionPath: solvePath(maze),
+    seedSalt,
   };
 }
 
@@ -57,6 +62,7 @@ const easeOutBack = (t: number) => {
   const c3 = c1 + 1;
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 };
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 function cellCenter(maze: Maze, idx: number, cell: number) {
   const r = Math.floor(idx / maze.cols);
@@ -74,17 +80,26 @@ export function drawFrame(
 ): void {
   const { width, height, maze, markers, palette, banner, title, cta, handle, solutionPath } = scene;
 
-  // background gradient
+  // animated background — subtle hue drift to feel alive
+  const drift = Math.sin(t * 0.6) * 30;
   const bg = ctx.createLinearGradient(0, 0, 0, height);
   bg.addColorStop(0, palette.bg);
+  bg.addColorStop(0.5, mix(palette.bg, palette.bgEnd, 0.5 + drift * 0.002));
   bg.addColorStop(1, palette.bgEnd);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
 
-  // ---- layout ----
+  // subtle vignette
+  const vg = ctx.createRadialGradient(width / 2, height / 2, height * 0.35, width / 2, height / 2, height * 0.62);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, width, height);
+
+  // layout
   const sidePad = 60;
-  const mazeTop = 540;
-  const mazeBottom = height - 480;
+  const mazeTop = 580;
+  const mazeBottom = height - 500;
   const mazeAreaH = mazeBottom - mazeTop;
 
   const spanC = maze.bbox.maxC - maze.bbox.minC + 1 + 2 * MARGIN_CELLS;
@@ -95,60 +110,66 @@ export function drawFrame(
   const mx = (width - mw) / 2;
   const my = mazeTop + (mazeAreaH - mh) / 2;
 
-  // ---- timeline (8.5 s) ----
+  // ---- 12 s timeline ----
   const bannerEnd = 0.5;
   const titleStart = 0.5;
   const titleEnd = 1.2;
   const mazeStart = 1.0;
-  const mazeEnd = 1.6;
-  const thinkEnd = 4.0;     // 2.4 s of static "try to solve it" time
+  const mazeEnd = 1.8;
+  const thinkEnd = 7.5;   // ~5.7 s of static think-time
   const walkStart = thinkEnd;
-  const walkEnd = 7.2;       // ~3.2 s walk
-  const ctaStart = 7.4;
-  const ctaEnd = 8.0;
+  const walkEnd = 10.6;   // ~3.1 s walk
+  const ctaStart = 10.8;
+  const ctaEnd = 11.4;
 
-  // BANNER (small label, fades in first)
+  // banner
   const bannerP = clamp01(t / bannerEnd);
   if (bannerP > 0) {
-    drawBanner(ctx, banner, width / 2, 130, bannerP, palette.text);
+    drawBanner(ctx, banner, width / 2, 140, bannerP, palette);
   }
 
-  // MAIN TITLE (fades in after banner)
+  // main title with gentle bob during think time
   const titleP = clamp01((t - titleStart) / (titleEnd - titleStart));
   if (titleP > 0) {
-    drawTitle(ctx, title, width / 2, 245, titleP, palette.text);
+    const bob = t > mazeEnd && t < walkStart ? Math.sin((t - mazeEnd) * 2.4) * 6 : 0;
+    drawTitle(ctx, title, width / 2, 270 + bob, titleP, palette);
   }
 
-  // MAZE (fade in)
+  // maze with scale-in pop
   const mazeP = clamp01((t - mazeStart) / (mazeEnd - mazeStart));
   if (mazeP > 0) {
+    const popScale = easeOutBack(mazeP);
     ctx.save();
     ctx.globalAlpha = mazeP;
+    const cx = width / 2;
+    const cy = mazeTop + mazeAreaH / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(popScale, popScale);
+    ctx.translate(-cx, -cy);
     drawMazeWalls(ctx, maze, mx, my, cell, palette.wall);
-    // start mascot at entrance, visible during think-time too
     const startC = cellCenter(maze, maze.start, cell);
-    drawMascot(ctx, markers.start, mx + startC.x, my + startC.y, cell);
-    drawGoal(ctx, maze, markers.end, mx, my, cell);
+    drawStartMascot(ctx, markers.start, mx + startC.x, my + startC.y, cell, palette);
+    drawGoal(ctx, maze, markers.end, mx, my, cell, t, palette);
     ctx.restore();
   }
 
-  // PULSING HINT during think time
+  // think-time hint
   if (t > mazeEnd && t < walkStart) {
-    const pulse = 0.5 + 0.5 * Math.sin((t - mazeEnd) * 4);
+    const pulse = 0.55 + 0.45 * Math.sin((t - mazeEnd) * 3.6);
     ctx.save();
-    ctx.globalAlpha = 0.45 + pulse * 0.35;
+    ctx.globalAlpha = pulse * 0.9;
     ctx.fillStyle = palette.text;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font =
-      'italic 600 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+      '700 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
     ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = 12;
-    ctx.fillText('think…', width / 2, mazeBottom + 30);
+    ctx.shadowBlur = 14;
+    ctx.fillText('think  fast', width / 2, mazeBottom + 60);
     ctx.restore();
   }
 
-  // WALK + TRAIL
+  // walk + animated dashed trail
   if (t >= walkStart && t <= walkEnd + 0.4) {
     const wp = clamp01((t - walkStart) / (walkEnd - walkStart));
     const segs = Math.max(1, solutionPath.length - 1);
@@ -159,51 +180,28 @@ export function drawFrame(
     const b = cellCenter(maze, solutionPath[segIdx + 1], cell);
     const px = mx + lerp(a.x, b.x, easeInOut(segT));
     const py = my + lerp(a.y, b.y, easeInOut(segT));
-    const bob = Math.sin(t * 14) * cell * 0.08;
+    const bob = Math.sin(t * 18) * cell * 0.1;
 
-    ctx.save();
-    ctx.strokeStyle = palette.trail;
-    ctx.lineWidth = Math.max(4, cell * 0.45);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    const first = cellCenter(maze, solutionPath[0], cell);
-    ctx.moveTo(mx + first.x, my + first.y);
-    for (let i = 1; i <= segIdx; i++) {
-      const c = cellCenter(maze, solutionPath[i], cell);
-      ctx.lineTo(mx + c.x, my + c.y);
-    }
-    ctx.lineTo(px, py);
-    ctx.stroke();
-    ctx.restore();
-
-    drawMascot(ctx, markers.start, px, py + bob, cell);
+    drawTrail(ctx, maze, solutionPath, segIdx, mx, my, cell, px, py, palette.trail, t);
+    drawWalkingMascot(ctx, markers.start, px, py + bob, cell, palette, t);
   } else if (t > walkEnd + 0.4) {
-    // post-walk: full trail + mascot at goal
-    ctx.save();
-    ctx.strokeStyle = palette.trail;
-    ctx.lineWidth = Math.max(4, cell * 0.45);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    solutionPath.forEach((idx, i) => {
-      const c = cellCenter(maze, idx, cell);
-      if (i === 0) ctx.moveTo(mx + c.x, my + c.y);
-      else ctx.lineTo(mx + c.x, my + c.y);
-    });
-    ctx.stroke();
-    ctx.restore();
+    drawTrail(ctx, maze, solutionPath, solutionPath.length - 1, mx, my, cell, null, null, palette.trail, t);
     const endC = cellCenter(maze, maze.end, cell);
-    const bob = Math.sin(t * 14) * cell * 0.06;
-    drawMascot(ctx, markers.start, mx + endC.x, my + endC.y + bob, cell);
+    const bob = Math.sin(t * 18) * cell * 0.07;
+    drawWalkingMascot(ctx, markers.start, mx + endC.x, my + endC.y + bob, cell, palette, t);
+    // confetti burst from the goal
+    const cp = clamp01((t - (walkEnd + 0.05)) / 1.4);
+    if (cp > 0) drawConfetti(ctx, mx + endC.x, my + endC.y, cp, scene.seedSalt);
   }
 
-  // CTA POP
+  // CTA pop
   const ctaP = clamp01((t - ctaStart) / (ctaEnd - ctaStart));
   if (ctaP > 0) {
-    drawCtaPop(ctx, cta, handle, width / 2, height - 320, ctaP, palette);
+    drawCtaPop(ctx, cta, handle, width / 2, height - 300, ctaP, palette);
   }
 }
+
+// ---------- elements ----------
 
 function drawBanner(
   ctx: CanvasRenderingContext2D,
@@ -211,24 +209,27 @@ function drawBanner(
   cx: number,
   cy: number,
   p: number,
-  color: string,
+  palette: Palette,
 ) {
   ctx.save();
   ctx.globalAlpha = p;
-  // letter-spaced uppercase rendered manually so it really shows
   const spaced = text.toUpperCase().split('').join(' ');
-  ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    'bold 38px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+    '900 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  // pill background
+  const w = Math.min(700, ctx.measureText(spaced).width + 60);
+  const h = 70;
   ctx.shadowColor = 'rgba(0,0,0,0.4)';
-  ctx.shadowBlur = 10;
-  ctx.fillText(spaced, cx, cy);
-  // thin underline
-  const w = Math.min(560, ctx.measureText(spaced).width);
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 6;
+  roundRect(ctx, cx - w / 2, cy - h / 2, w, h, h / 2);
+  ctx.fillStyle = palette.ctaBg;
+  ctx.fill();
   ctx.shadowColor = 'transparent';
-  ctx.fillRect(cx - w / 2, cy + 32, w, 3);
+  ctx.fillStyle = palette.ctaText;
+  ctx.fillText(spaced, cx, cy + 2);
   ctx.restore();
 }
 
@@ -238,43 +239,29 @@ function drawTitle(
   cx: number,
   cy: number,
   p: number,
-  color: string,
+  palette: Palette,
 ) {
   ctx.save();
   ctx.globalAlpha = p;
-  const slide = (1 - p) * -20;
-  ctx.fillStyle = color;
+  const slide = (1 - p) * -24;
+  ctx.fillStyle = palette.text;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.font =
-    'bold 72px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.4)';
-  ctx.shadowBlur = 14;
-  ctx.shadowOffsetY = 4;
-  wrapText(ctx, text, cx, cy + slide, 960, 88);
-  ctx.restore();
-}
-
-function wrapText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  cx: number,
-  cy: number,
-  maxWidth: number,
-  lineHeight: number,
-) {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let line = '';
-  for (const w of words) {
-    const test = line ? line + ' ' + w : w;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line);
-      line = w;
-    } else line = test;
+    '900 92px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 22;
+  ctx.shadowOffsetY = 6;
+  const lines = wrapToLines(ctx, text, 960);
+  for (let i = 0; i < lines.length; i++) {
+    const y = cy + slide + i * 100;
+    ctx.strokeText(lines[i], cx, y);
+    ctx.fillText(lines[i], cx, y);
   }
-  if (line) lines.push(line);
-  for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], cx, cy + i * lineHeight);
+  ctx.restore();
 }
 
 function drawMazeWalls(
@@ -288,8 +275,12 @@ function drawMazeWalls(
   ctx.save();
   ctx.translate(mx, my);
   ctx.strokeStyle = color;
-  ctx.lineWidth = Math.max(2.5, cell * 0.22);
+  ctx.lineWidth = Math.max(3, cell * 0.26);
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 4;
   ctx.beginPath();
   for (let i = 0; i < maze.cells.length; i++) {
     if (!maze.cells[i]) continue;
@@ -306,32 +297,107 @@ function drawMazeWalls(
   ctx.restore();
 }
 
-function drawMascot(
+function drawStartMascot(
   ctx: CanvasRenderingContext2D,
   m: MarkerImg | null,
   cx: number,
   cy: number,
   cell: number,
+  palette: Palette,
 ) {
-  const r = cell * 1.4;
+  drawMascotCommon(ctx, m, cx, cy, cell, palette, false, 0);
+}
+
+function drawWalkingMascot(
+  ctx: CanvasRenderingContext2D,
+  m: MarkerImg | null,
+  cx: number,
+  cy: number,
+  cell: number,
+  palette: Palette,
+  t: number,
+) {
+  drawMascotCommon(ctx, m, cx, cy, cell, palette, true, t);
+}
+
+function drawMascotCommon(
+  ctx: CanvasRenderingContext2D,
+  m: MarkerImg | null,
+  cx: number,
+  cy: number,
+  cell: number,
+  palette: Palette,
+  walking: boolean,
+  t: number,
+) {
+  const r = cell * 1.75;
+  // soft trailing glow under the mascot
+  ctx.save();
+  const glow = ctx.createRadialGradient(cx, cy + r * 0.4, r * 0.2, cx, cy + r * 0.4, r * 1.4);
+  glow.addColorStop(0, palette.trail);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = glow;
+  ctx.fillRect(cx - r * 1.4, cy - r * 0.5, r * 2.8, r * 2.5);
+  ctx.restore();
+
   if (m && m.img.complete && m.img.naturalWidth) {
     const iw = m.img.naturalWidth;
     const ih = m.img.naturalHeight;
     const s = Math.min((2 * r) / iw, (2 * r) / ih);
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = cell * 0.4;
-    ctx.shadowOffsetY = cell * 0.1;
-    ctx.drawImage(m.img, cx - (iw * s) / 2, cy - (ih * s) / 2, iw * s, ih * s);
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = cell * 0.5;
+    ctx.shadowOffsetY = cell * 0.15;
+    if (walking) {
+      const tilt = Math.sin(t * 14) * 0.06;
+      ctx.translate(cx, cy);
+      ctx.rotate(tilt);
+      ctx.drawImage(m.img, -(iw * s) / 2, -(ih * s) / 2, iw * s, ih * s);
+    } else {
+      ctx.drawImage(m.img, cx - (iw * s) / 2, cy - (ih * s) / 2, iw * s, ih * s);
+    }
     ctx.restore();
   } else {
-    ctx.save();
-    ctx.fillStyle = '#22c55e';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    // friendly smiley fallback so a missed AI fetch still looks intentional
+    drawSmiley(ctx, cx, cy, r * 0.85, palette.ctaBg, palette.ctaText, walking ? t : 0);
   }
+}
+
+function drawSmiley(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  fill: string,
+  ink: string,
+  t: number,
+) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.sin(t * 12) * 0.05);
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = r * 0.5;
+  ctx.shadowOffsetY = r * 0.12;
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = ink;
+  // eyes
+  ctx.beginPath();
+  ctx.arc(-r * 0.32, -r * 0.18, r * 0.12, 0, Math.PI * 2);
+  ctx.arc(r * 0.32, -r * 0.18, r * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+  // smile
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = r * 0.13;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0, r * 0.05, r * 0.45, Math.PI * 0.15, Math.PI - Math.PI * 0.15);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawGoal(
@@ -341,39 +407,140 @@ function drawGoal(
   mx: number,
   my: number,
   cell: number,
+  t: number,
+  palette: Palette,
 ) {
   const c = cellCenter(maze, maze.end, cell);
   const cx = mx + c.x;
   const cy = my + c.y;
-  const r = cell * 1.6;
+  // throbbing halo
+  const throb = 1 + Math.sin(t * 4) * 0.18;
+  const r = cell * 1.9 * throb;
   ctx.save();
-  const halo = ctx.createRadialGradient(cx, cy, r * 0.55, cx, cy, r * 1.55);
-  halo.addColorStop(0, 'rgba(255,200,80,0.55)');
-  halo.addColorStop(1, 'rgba(255,200,80,0)');
+  const halo = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.5);
+  halo.addColorStop(0, 'rgba(255,210,80,0.7)');
+  halo.addColorStop(1, 'rgba(255,210,80,0)');
   ctx.fillStyle = halo;
   ctx.beginPath();
-  ctx.arc(cx, cy, r * 1.55, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
   if (m && m.img.complete && m.img.naturalWidth) {
     const iw = m.img.naturalWidth;
     const ih = m.img.naturalHeight;
-    const s = Math.min((2 * r) / iw, (2 * r) / ih);
+    const baseR = cell * 1.8;
+    const s = Math.min((2 * baseR) / iw, (2 * baseR) / ih);
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = cell * 0.5;
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = cell * 0.55;
     ctx.drawImage(m.img, cx - (iw * s) / 2, cy - (ih * s) / 2, iw * s, ih * s);
     ctx.restore();
   } else {
-    ctx.save();
-    ctx.fillStyle = '#ef4444';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    drawStar(ctx, cx, cy, cell * 1.55, palette.ctaBg, palette.ctaText);
   }
 }
+
+function drawStar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  fill: string,
+  stroke: string,
+) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = r * 0.4;
+  ctx.shadowOffsetY = r * 0.12;
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = r * 0.12;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rad = i % 2 === 0 ? r : r * 0.45;
+    const px = cx + Math.cos(ang) * rad;
+    const py = cy + Math.sin(ang) * rad;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTrail(
+  ctx: CanvasRenderingContext2D,
+  maze: Maze,
+  path: number[],
+  upTo: number,
+  mx: number,
+  my: number,
+  cell: number,
+  px: number | null,
+  py: number | null,
+  color: string,
+  t: number,
+) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(5, cell * 0.5);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.setLineDash([cell * 0.9, cell * 0.55]);
+  ctx.lineDashOffset = -t * cell * 1.8;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = cell * 0.4;
+  ctx.beginPath();
+  const first = cellCenter(maze, path[0], cell);
+  ctx.moveTo(mx + first.x, my + first.y);
+  for (let i = 1; i <= upTo; i++) {
+    const c = cellCenter(maze, path[i], cell);
+    ctx.lineTo(mx + c.x, my + c.y);
+  }
+  if (px !== null && py !== null) ctx.lineTo(px, py);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawConfetti(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  p: number,
+  salt: number,
+) {
+  const colors = ['#f72585', '#7209b7', '#3a86ff', '#ffbe0b', '#fb5607', '#06d6a0', '#f5d3ff'];
+  const N = 22;
+  ctx.save();
+  for (let i = 0; i < N; i++) {
+    const seed = (salt * 9301 + i * 49297) % 233280;
+    const angle = (i / N) * Math.PI * 2 + ((seed % 100) / 100) * 0.6;
+    const speed = 260 + (seed % 110);
+    const distP = easeOutCubic(p);
+    const px = cx + Math.cos(angle) * speed * distP;
+    const py = cy + Math.sin(angle) * speed * distP * 0.6 + 360 * p * p;
+    const size = (10 + (seed % 14)) * (1 - p * 0.4);
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.globalAlpha = Math.max(0, 1 - p * 1.1);
+    if (i % 3 === 0) {
+      ctx.beginPath();
+      ctx.arc(px, py, size * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(((seed % 360) / 360) * Math.PI * 2 + t01(p) * Math.PI * 2);
+      ctx.fillRect(-size * 0.5, -size * 0.25, size, size * 0.5);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+const t01 = (x: number) => x;
 
 function drawCtaPop(
   ctx: CanvasRenderingContext2D,
@@ -384,49 +551,49 @@ function drawCtaPop(
   p: number,
   palette: Palette,
 ) {
-  // pop in with overshoot, then settle
   const scale = easeOutBack(p);
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(scale, scale);
   ctx.translate(-cx, -cy);
 
-  // bright headline
   ctx.fillStyle = palette.ctaBg;
+  ctx.strokeStyle = palette.ctaText;
+  ctx.lineWidth = 10;
+  ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    'bold 92px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = 28;
+    '900 86px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 32;
   ctx.shadowOffsetY = 8;
-  // thick stroke ring for "sticker" look
-  ctx.strokeStyle = palette.ctaText;
-  ctx.lineWidth = 8;
-  ctx.lineJoin = 'round';
-  const lines = wrapTextToLines(ctx, cta, 920);
-  const offset = -((lines.length - 1) * 100) / 2;
+  const lines = wrapToLines(ctx, cta, 920);
+  const lh = 94;
+  const offset = -((lines.length - 1) * lh) / 2;
   for (let i = 0; i < lines.length; i++) {
-    const y = cy + offset + i * 100;
+    const y = cy + offset + i * lh;
     ctx.strokeText(lines[i], cx, y);
     ctx.fillText(lines[i], cx, y);
   }
 
   if (handle) {
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 16;
     ctx.font =
       '700 50px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6;
     ctx.fillStyle = palette.text;
     ctx.strokeStyle = palette.ctaText;
-    const hy = cy + offset + lines.length * 100 + 30;
+    const hy = cy + offset + lines.length * lh + 30;
     ctx.strokeText(handle, cx, hy);
     ctx.fillText(handle, cx, hy);
   }
   ctx.restore();
 }
 
-function wrapTextToLines(
+// ---------- helpers ----------
+
+function wrapToLines(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
@@ -443,4 +610,43 @@ function wrapTextToLines(
   }
   if (line) lines.push(line);
   return lines;
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function mix(a: string, b: string, t: number): string {
+  const pa = hex(a);
+  const pb = hex(b);
+  const r = Math.round(lerp(pa[0], pb[0], t));
+  const g = Math.round(lerp(pa[1], pb[1], t));
+  const bl = Math.round(lerp(pa[2], pb[2], t));
+  return `rgb(${r},${g},${bl})`;
+}
+
+function hex(s: string): [number, number, number] {
+  const h = s.replace('#', '');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
 }
