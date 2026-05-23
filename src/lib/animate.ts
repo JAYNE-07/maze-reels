@@ -205,27 +205,31 @@ export function drawFrame(
     ctx.restore();
   }
 
-  // Pause hint — visible from the moment the maze appears through the
-  // entire solving phase (think + countdown). Subtle italic line below
-  // the maze so viewers know they can take their own time.
-  if (t > mazeEnd && t < walkStart) {
-    const pulse = 0.7 + 0.3 * Math.sin((t - mazeEnd) * 3.0);
+  // Pause hint — sits ABOVE the maze in the safe zone (Instagram's reel
+  // UI covers ~25% of the bottom, so anything past y≈1670 gets clipped).
+  // Only visible during pure think time; fades out as the countdown
+  // takes over the same vertical band.
+  if (t > mazeEnd && t < countdownStart) {
+    const inP = clamp01((t - mazeEnd) / 0.25);
+    const outP = clamp01((countdownStart - t) / 0.25);
+    const alpha = Math.min(inP, outP);
     ctx.save();
-    ctx.globalAlpha = pulse;
-    const { shadow } = contrast(palette.text);
+    ctx.globalAlpha = alpha * 0.95;
+    const { stroke, shadow } = contrast(palette.text);
     ctx.fillStyle = palette.text;
-    ctx.strokeStyle = contrast(palette.text).stroke;
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 5;
     ctx.lineJoin = 'round';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font =
-      'italic 600 34px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+      'italic 600 38px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
     ctx.shadowColor = shadow;
-    ctx.shadowBlur = 10;
-    const hint = '⏸  pause if you need more time';
-    ctx.strokeText(hint, width / 2, mazeBottom + 50);
-    ctx.fillText(hint, width / 2, mazeBottom + 50);
+    ctx.shadowBlur = 12;
+    const hint = '⏸  pause for more time';
+    const hintY = 410;
+    ctx.strokeText(hint, width / 2, hintY);
+    ctx.fillText(hint, width / 2, hintY);
     ctx.restore();
   }
 

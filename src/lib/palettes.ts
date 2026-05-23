@@ -34,6 +34,28 @@ export const PALETTES: Palette[] = [
   { name: 'Sunset Plum', bg: '#3b0f1a', bgEnd: '#8e2843', wall: '#ffd9b3', trail: 'rgba(255,217,179,0.9)', text: '#ffd9b3', ctaBg: '#ffd9b3', ctaText: '#3b0f1a' },
   { name: 'Electric', bg: '#06043a', bgEnd: '#1e0e96', wall: '#39ff14', trail: 'rgba(255,250,0,0.95)', text: '#fffa00', ctaBg: '#39ff14', ctaText: '#06043a' },
   { name: 'Peach Sky', bg: '#ffb38a', bgEnd: '#ff7e5f', wall: '#1d1d1d', trail: 'rgba(29,29,29,0.7)', text: '#3a1010', ctaBg: '#3a1010', ctaText: '#ffe7d6' },
+
+  // --- bright / light backgrounds for visual variety ---
+  { name: 'Pastel Pink', bg: '#ffd6e0', bgEnd: '#ffadc4', wall: '#7a0033', trail: 'rgba(122,0,51,0.7)', text: '#5a0026', ctaBg: '#7a0033', ctaText: '#ffd6e0' },
+  { name: 'Lemon Light', bg: '#fff8b3', bgEnd: '#ffe066', wall: '#1a1a00', trail: 'rgba(26,26,0,0.7)', text: '#1a1a00', ctaBg: '#ff3b6e', ctaText: '#fff8b3' },
+  { name: 'Mint Light', bg: '#c8f7c5', bgEnd: '#8af09f', wall: '#0d2818', trail: 'rgba(13,40,24,0.7)', text: '#0d2818', ctaBg: '#0d2818', ctaText: '#c8f7c5' },
+  { name: 'Cloud White', bg: '#ffffff', bgEnd: '#f1f1f1', wall: '#1d1d1d', trail: 'rgba(255,59,110,0.85)', text: '#1d1d1d', ctaBg: '#ff3b6e', ctaText: '#ffffff' },
+  { name: 'Lavender Soft', bg: '#e6d6ff', bgEnd: '#c5a3ff', wall: '#2a0d57', trail: 'rgba(42,13,87,0.7)', text: '#2a0d57', ctaBg: '#2a0d57', ctaText: '#e6d6ff' },
+  { name: 'Peach Cream', bg: '#ffe5cc', bgEnd: '#ffb380', wall: '#3d1500', trail: 'rgba(61,21,0,0.7)', text: '#3d1500', ctaBg: '#3d1500', ctaText: '#ffe5cc' },
+  { name: 'Sky Mint', bg: '#d6f6ff', bgEnd: '#a8e6c9', wall: '#0a3855', trail: 'rgba(10,56,85,0.7)', text: '#0a3855', ctaBg: '#0a3855', ctaText: '#d6f6ff' },
+
+  // --- saturated mid-bright pops ---
+  { name: 'Hot Pink', bg: '#ff006e', bgEnd: '#ff5a8a', wall: '#ffffff', trail: 'rgba(255,232,143,0.95)', text: '#ffffff', ctaBg: '#ffe88a', ctaText: '#7a0033' },
+  { name: 'Cyan Pop', bg: '#00d4ff', bgEnd: '#0098cc', wall: '#ffffff', trail: 'rgba(255,215,0,0.95)', text: '#ffffff', ctaBg: '#ffd700', ctaText: '#003047' },
+  { name: 'Tangerine', bg: '#ff7e00', bgEnd: '#ffa733', wall: '#ffffff', trail: 'rgba(255,255,255,0.9)', text: '#ffffff', ctaBg: '#ffffff', ctaText: '#7a3300' },
+  { name: 'Sunshine', bg: '#ffd700', bgEnd: '#ffb000', wall: '#3d1500', trail: 'rgba(255,59,110,0.95)', text: '#3d1500', ctaBg: '#ff3b6e', ctaText: '#ffd700' },
+  { name: 'Sea Blue', bg: '#0077be', bgEnd: '#00a8e8', wall: '#ffffff', trail: 'rgba(255,253,130,0.95)', text: '#ffffff', ctaBg: '#fffd82', ctaText: '#0a3855' },
+
+  // --- distinctive earthy / saturated unique ---
+  { name: 'Mocha', bg: '#5a3a22', bgEnd: '#8a5a3a', wall: '#ffe4c4', trail: 'rgba(255,228,196,0.85)', text: '#ffe4c4', ctaBg: '#ffe4c4', ctaText: '#3a1d0a' },
+  { name: 'Aquamarine', bg: '#7fffd4', bgEnd: '#40e0d0', wall: '#003344', trail: 'rgba(0,51,68,0.7)', text: '#003344', ctaBg: '#003344', ctaText: '#7fffd4' },
+  { name: 'Bubblegum', bg: '#ff85c8', bgEnd: '#9ad7ff', wall: '#ffffff', trail: 'rgba(255,255,255,0.9)', text: '#ffffff', ctaBg: '#ffd700', ctaText: '#5a0040' },
+  { name: 'Coral Reef', bg: '#ff9d6c', bgEnd: '#ffd685', wall: '#003344', trail: 'rgba(0,51,68,0.7)', text: '#003344', ctaBg: '#003344', ctaText: '#ffe4c4' },
 ];
 
 export const pick = <T,>(arr: T[], i: number): T => arr[((i % arr.length) + arr.length) % arr.length];
