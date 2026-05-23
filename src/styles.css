@@ -152,3 +152,56 @@ button:disabled { opacity: 0.5; cursor: default; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 .log li:last-child { border-bottom: none; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 18, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 22px;
+  max-width: 360px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+.modal h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+}
+.modal video {
+  width: 270px;
+  height: 480px;
+  background: #000;
+  border-radius: 22px;
+  border: 6px solid #1a223e;
+}
+.modal-filename {
+  margin: 0;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  text-align: center;
+  word-break: break-all;
+}
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+.modal-actions button {
+  flex: 1;
+}

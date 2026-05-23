@@ -1,6 +1,5 @@
-// Single 9:16 reel frame renderer. Animates a mascot walking through
-// a themed maze: title → maze appears → mascot walks the solution
-// path → CTA card slides in.
+// Single 9:16 reel frame renderer. Timeline gives viewers think-time
+// before the mascot starts walking, then a pop-style CTA at the end.
 
 import { hasWall, solvePath, type Maze } from './maze';
 import type { Markers, MarkerImg } from './markers';
@@ -12,9 +11,10 @@ export interface Scene {
   maze: Maze;
   markers: Markers;
   palette: Palette;
-  title: string;
-  cta: string;
-  handle: string;
+  banner: string;   // small label at the very top, e.g. "CAN YOU SOLVE THIS?"
+  title: string;    // main theme-specific headline
+  cta: string;      // pop text near the bottom
+  handle: string;   // optional @handle under the CTA
   duration: number;
   solutionPath: number[];
 }
@@ -27,10 +27,11 @@ export function buildScene(
   maze: Maze,
   markers: Markers,
   palette: Palette,
+  banner: string,
   title: string,
   cta: string,
   handle: string,
-  duration = 8,
+  duration: number,
 ): Scene {
   return {
     width,
@@ -38,6 +39,7 @@ export function buildScene(
     maze,
     markers,
     palette,
+    banner,
     title,
     cta,
     handle,
@@ -46,11 +48,15 @@ export function buildScene(
   };
 }
 
-function easeInOut(t: number): number {
-  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-}
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
+const easeInOut = (t: number) =>
+  t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+const easeOutBack = (t: number) => {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
 
 function cellCenter(maze: Maze, idx: number, cell: number) {
   const r = Math.floor(idx / maze.cols);
@@ -66,7 +72,7 @@ export function drawFrame(
   scene: Scene,
   t: number,
 ): void {
-  const { width, height, maze, markers, palette, title, cta, handle, solutionPath } = scene;
+  const { width, height, maze, markers, palette, banner, title, cta, handle, solutionPath } = scene;
 
   // background gradient
   const bg = ctx.createLinearGradient(0, 0, 0, height);
@@ -75,10 +81,10 @@ export function drawFrame(
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
 
-  // layout
+  // ---- layout ----
   const sidePad = 60;
-  const mazeTop = 480;
-  const mazeBottom = height - 460;
+  const mazeTop = 540;
+  const mazeBottom = height - 480;
   const mazeAreaH = mazeBottom - mazeTop;
 
   const spanC = maze.bbox.maxC - maze.bbox.minC + 1 + 2 * MARGIN_CELLS;
@@ -89,35 +95,60 @@ export function drawFrame(
   const mx = (width - mw) / 2;
   const my = mazeTop + (mazeAreaH - mh) / 2;
 
-  // timeline (8s default)
-  const titleEnd = 0.6;
-  const mazeStart = 0.5;
-  const mazeEnd = 1.2;
-  const walkStart = 1.2;
-  const walkEnd = 7.0;
-  const ctaStart = 7.0;
-  const ctaEnd = 7.5;
+  // ---- timeline (8.5 s) ----
+  const bannerEnd = 0.5;
+  const titleStart = 0.5;
+  const titleEnd = 1.2;
+  const mazeStart = 1.0;
+  const mazeEnd = 1.6;
+  const thinkEnd = 4.0;     // 2.4 s of static "try to solve it" time
+  const walkStart = thinkEnd;
+  const walkEnd = 7.2;       // ~3.2 s walk
+  const ctaStart = 7.4;
+  const ctaEnd = 8.0;
 
-  // TITLE
-  const titleP = clamp01(t / titleEnd);
-  if (titleP > 0) {
-    ctx.save();
-    ctx.globalAlpha = titleP;
-    drawTitle(ctx, title, width / 2, 160 + (1 - titleP) * -30, palette.text);
-    ctx.restore();
+  // BANNER (small label, fades in first)
+  const bannerP = clamp01(t / bannerEnd);
+  if (bannerP > 0) {
+    drawBanner(ctx, banner, width / 2, 130, bannerP, palette.text);
   }
 
-  // MAZE
+  // MAIN TITLE (fades in after banner)
+  const titleP = clamp01((t - titleStart) / (titleEnd - titleStart));
+  if (titleP > 0) {
+    drawTitle(ctx, title, width / 2, 245, titleP, palette.text);
+  }
+
+  // MAZE (fade in)
   const mazeP = clamp01((t - mazeStart) / (mazeEnd - mazeStart));
   if (mazeP > 0) {
     ctx.save();
     ctx.globalAlpha = mazeP;
     drawMazeWalls(ctx, maze, mx, my, cell, palette.wall);
+    // start mascot at entrance, visible during think-time too
+    const startC = cellCenter(maze, maze.start, cell);
+    drawMascot(ctx, markers.start, mx + startC.x, my + startC.y, cell);
     drawGoal(ctx, maze, markers.end, mx, my, cell);
     ctx.restore();
   }
 
-  // WALK
+  // PULSING HINT during think time
+  if (t > mazeEnd && t < walkStart) {
+    const pulse = 0.5 + 0.5 * Math.sin((t - mazeEnd) * 4);
+    ctx.save();
+    ctx.globalAlpha = 0.45 + pulse * 0.35;
+    ctx.fillStyle = palette.text;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font =
+      'italic 600 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 12;
+    ctx.fillText('think…', width / 2, mazeBottom + 30);
+    ctx.restore();
+  }
+
+  // WALK + TRAIL
   if (t >= walkStart && t <= walkEnd + 0.4) {
     const wp = clamp01((t - walkStart) / (walkEnd - walkStart));
     const segs = Math.max(1, solutionPath.length - 1);
@@ -130,7 +161,6 @@ export function drawFrame(
     const py = my + lerp(a.y, b.y, easeInOut(segT));
     const bob = Math.sin(t * 14) * cell * 0.08;
 
-    // trail
     ctx.save();
     ctx.strokeStyle = palette.trail;
     ctx.lineWidth = Math.max(4, cell * 0.45);
@@ -149,7 +179,7 @@ export function drawFrame(
 
     drawMascot(ctx, markers.start, px, py + bob, cell);
   } else if (t > walkEnd + 0.4) {
-    // post-walk: full trail + mascot resting at goal
+    // post-walk: full trail + mascot at goal
     ctx.save();
     ctx.strokeStyle = palette.trail;
     ctx.lineWidth = Math.max(4, cell * 0.45);
@@ -168,15 +198,38 @@ export function drawFrame(
     drawMascot(ctx, markers.start, mx + endC.x, my + endC.y + bob, cell);
   }
 
-  // CTA
+  // CTA POP
   const ctaP = clamp01((t - ctaStart) / (ctaEnd - ctaStart));
   if (ctaP > 0) {
-    ctx.save();
-    const cardY = height - 380 + (1 - ctaP) * 200;
-    ctx.globalAlpha = ctaP;
-    drawCta(ctx, cta, handle, width / 2, cardY, width - 120, palette);
-    ctx.restore();
+    drawCtaPop(ctx, cta, handle, width / 2, height - 320, ctaP, palette);
   }
+}
+
+function drawBanner(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  cy: number,
+  p: number,
+  color: string,
+) {
+  ctx.save();
+  ctx.globalAlpha = p;
+  // letter-spaced uppercase rendered manually so it really shows
+  const spaced = text.toUpperCase().split('').join(' ');
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font =
+    'bold 38px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 10;
+  ctx.fillText(spaced, cx, cy);
+  // thin underline
+  const w = Math.min(560, ctx.measureText(spaced).width);
+  ctx.shadowColor = 'transparent';
+  ctx.fillRect(cx - w / 2, cy + 32, w, 3);
+  ctx.restore();
 }
 
 function drawTitle(
@@ -184,18 +237,21 @@ function drawTitle(
   text: string,
   cx: number,
   cy: number,
+  p: number,
   color: string,
 ) {
   ctx.save();
+  ctx.globalAlpha = p;
+  const slide = (1 - p) * -20;
   ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.font =
-    'bold 76px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    'bold 72px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
   ctx.shadowBlur = 14;
   ctx.shadowOffsetY = 4;
-  wrapText(ctx, text, cx, cy, 960, 92);
+  wrapText(ctx, text, cx, cy + slide, 960, 88);
   ctx.restore();
 }
 
@@ -241,22 +297,10 @@ function drawMazeWalls(
     const c = i % maze.cols;
     const x = (c - maze.bbox.minC + MARGIN_CELLS) * cell;
     const y = (r - maze.bbox.minR + MARGIN_CELLS) * cell;
-    if (hasWall(maze, i, 0)) {
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + cell, y);
-    }
-    if (hasWall(maze, i, 3)) {
-      ctx.moveTo(x, y);
-      ctx.lineTo(x, y + cell);
-    }
-    if (hasWall(maze, i, 1)) {
-      ctx.moveTo(x + cell, y);
-      ctx.lineTo(x + cell, y + cell);
-    }
-    if (hasWall(maze, i, 2)) {
-      ctx.moveTo(x, y + cell);
-      ctx.lineTo(x + cell, y + cell);
-    }
+    if (hasWall(maze, i, 0)) { ctx.moveTo(x, y); ctx.lineTo(x + cell, y); }
+    if (hasWall(maze, i, 3)) { ctx.moveTo(x, y); ctx.lineTo(x, y + cell); }
+    if (hasWall(maze, i, 1)) { ctx.moveTo(x + cell, y); ctx.lineTo(x + cell, y + cell); }
+    if (hasWall(maze, i, 2)) { ctx.moveTo(x, y + cell); ctx.lineTo(x + cell, y + cell); }
   }
   ctx.stroke();
   ctx.restore();
@@ -283,12 +327,9 @@ function drawMascot(
   } else {
     ctx.save();
     ctx.fillStyle = '#22c55e';
-    ctx.strokeStyle = '#0b1220';
-    ctx.lineWidth = Math.max(2, r * 0.1);
     ctx.beginPath();
     ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
     ctx.fill();
-    ctx.stroke();
     ctx.restore();
   }
 }
@@ -305,7 +346,6 @@ function drawGoal(
   const cx = mx + c.x;
   const cy = my + c.y;
   const r = cell * 1.6;
-  // warm halo
   ctx.save();
   const halo = ctx.createRadialGradient(cx, cy, r * 0.55, cx, cy, r * 1.55);
   halo.addColorStop(0, 'rgba(255,200,80,0.55)');
@@ -335,59 +375,72 @@ function drawGoal(
   }
 }
 
-function drawCta(
+function drawCtaPop(
   ctx: CanvasRenderingContext2D,
   cta: string,
   handle: string,
   cx: number,
   cy: number,
-  w: number,
+  p: number,
   palette: Palette,
 ) {
-  const h = handle ? 240 : 180;
-  const x = cx - w / 2;
+  // pop in with overshoot, then settle
+  const scale = easeOutBack(p);
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.4)';
-  ctx.shadowBlur = 30;
-  ctx.shadowOffsetY = 8;
-  roundRect(ctx, x, cy, w, h, 40);
-  ctx.fillStyle = palette.ctaBg;
-  ctx.fill();
-  ctx.shadowColor = 'transparent';
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.translate(-cx, -cy);
 
-  ctx.fillStyle = palette.ctaText;
+  // bright headline
+  ctx.fillStyle = palette.ctaBg;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    'bold 60px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  const titleY = handle ? cy + 80 : cy + h / 2;
-  wrapText(ctx, cta, cx, titleY - 30, w - 80, 66);
+    'bold 92px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 8;
+  // thick stroke ring for "sticker" look
+  ctx.strokeStyle = palette.ctaText;
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  const lines = wrapTextToLines(ctx, cta, 920);
+  const offset = -((lines.length - 1) * 100) / 2;
+  for (let i = 0; i < lines.length; i++) {
+    const y = cy + offset + i * 100;
+    ctx.strokeText(lines[i], cx, y);
+    ctx.fillText(lines[i], cx, y);
+  }
 
   if (handle) {
+    ctx.shadowBlur = 14;
     ctx.font =
-      '600 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-    ctx.fillText(handle, cx, cy + h - 60);
+      '700 50px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+    ctx.lineWidth = 5;
+    ctx.fillStyle = palette.text;
+    ctx.strokeStyle = palette.ctaText;
+    const hy = cy + offset + lines.length * 100 + 30;
+    ctx.strokeText(handle, cx, hy);
+    ctx.fillText(handle, cx, hy);
   }
   ctx.restore();
 }
 
-function roundRect(
+function wrapTextToLines(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
+  text: string,
+  maxWidth: number,
+): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = w;
+    } else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
