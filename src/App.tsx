@@ -359,11 +359,13 @@ export default function App() {
         </label>
 
         <p className="note">
-          Each reel is 15 s — ~4.5 s think time, 3-2-1 countdown, solution
-          walk, then ~3 s of CTA. 1080×1920 with ticking-clock background
-          and event sounds at title, countdown and CTA. Leave the CTA blank
-          to randomize per reel. Recording is real-time so {count} reel
-          {count === 1 ? '' : 's'} take ~{count * 16} s plus AI fetch.
+          Each reel is 12 s — ~1.5 s think time + 3-2-1 countdown (a small
+          "⏸ pause if you need more time" hint sits below the maze so
+          viewers can extend it themselves), then the solution walk and a
+          ~3 s CTA. 1080×1920 with ticking-clock background and event
+          sounds. Leave the CTA blank to randomize per reel. Recording is
+          real-time so {count} reel{count === 1 ? '' : 's'} take ~
+          {count * 13} s plus AI fetch.
         </p>
 
         <div className="row actions">

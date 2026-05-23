@@ -25,21 +25,23 @@ export interface Scene {
 const MARGIN_CELLS = 2;
 
 /** Single source of truth for the reel timeline — animate.ts uses these
- *  for drawing, App.tsx passes them through to the music scheduler. */
+ *  for drawing, App.tsx passes them through to the music scheduler.
+ *  Solving phase (think + countdown) is intentionally short; the reel
+ *  prompts viewers to pause if they need more time. */
 export const REEL_TIMING = {
   bannerEnd: 0.5,
   titleStart: 0.5,
   titleEnd: 1.2,
   mazeStart: 1.0,
   mazeEnd: 1.8,
-  thinkEnd: 6.5,
-  countdownStart: 6.5,
-  countdownEnd: 9.5,
-  walkStart: 9.5,
-  walkEnd: 12.0,
-  ctaStart: 12.0,
-  ctaEnd: 12.6,
-  duration: 15.0,
+  thinkEnd: 3.3,
+  countdownStart: 3.3,
+  countdownEnd: 6.3,
+  walkStart: 6.3,
+  walkEnd: 9.0,
+  ctaStart: 9.0,
+  ctaEnd: 9.6,
+  duration: 12.0,
 } as const;
 
 export function buildScene(
@@ -203,19 +205,27 @@ export function drawFrame(
     ctx.restore();
   }
 
-  // think-time hint (before countdown kicks in)
-  if (t > mazeEnd && t < countdownStart) {
-    const pulse = 0.55 + 0.45 * Math.sin((t - mazeEnd) * 3.6);
+  // Pause hint — visible from the moment the maze appears through the
+  // entire solving phase (think + countdown). Subtle italic line below
+  // the maze so viewers know they can take their own time.
+  if (t > mazeEnd && t < walkStart) {
+    const pulse = 0.7 + 0.3 * Math.sin((t - mazeEnd) * 3.0);
     ctx.save();
-    ctx.globalAlpha = pulse * 0.9;
+    ctx.globalAlpha = pulse;
+    const { shadow } = contrast(palette.text);
     ctx.fillStyle = palette.text;
+    ctx.strokeStyle = contrast(palette.text).stroke;
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font =
-      '700 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = 14;
-    ctx.fillText('think  fast', width / 2, mazeBottom + 60);
+      'italic 600 34px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+    ctx.shadowColor = shadow;
+    ctx.shadowBlur = 10;
+    const hint = '⏸  pause if you need more time';
+    ctx.strokeText(hint, width / 2, mazeBottom + 50);
+    ctx.fillText(hint, width / 2, mazeBottom + 50);
     ctx.restore();
   }
 
