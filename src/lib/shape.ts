@@ -135,26 +135,190 @@ export async function fetchSilhouette(
     /* fall through */
   }
 
-  // Last-resort built-in disc — guarantees a reel slot always fills.
-  // The reel app prioritizes delivering the requested count; the maze
-  // engine handles the silhouette and the title is generic anyway.
-  return defaultSilhouette();
+  // Last-resort built-in geometric shape — guarantees a reel slot always
+  // fills, AND varies by seed so a heavily-throttled batch still gets
+  // five different silhouettes instead of five identical discs.
+  return defaultSilhouette(seed);
 }
 
-function defaultSilhouette(): Silhouette {
+function defaultSilhouette(seed: number): Silhouette {
+  const cv = document.createElement('canvas');
+  cv.width = SAMPLE;
+  cv.height = SAMPLE;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, SAMPLE, SAMPLE);
+  ctx.fillStyle = '#000000';
+  const idx = ((seed >>> 0) % FALLBACK_SHAPES.length + FALLBACK_SHAPES.length) % FALLBACK_SHAPES.length;
+  FALLBACK_SHAPES[idx](ctx, SAMPLE);
+  const data = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
   const dark = new Uint8Array(SAMPLE * SAMPLE);
-  const cx = SAMPLE / 2;
-  const cy = SAMPLE / 2;
-  const r = SAMPLE * 0.42;
-  const r2 = r * r;
-  for (let y = 0; y < SAMPLE; y++) {
-    for (let x = 0; x < SAMPLE; x++) {
-      const dx = x - cx;
-      const dy = y - cy;
-      if (dx * dx + dy * dy <= r2) dark[y * SAMPLE + x] = 1;
-    }
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    if (data[i] < 128) dark[p] = 1;
   }
   return { dark, source: 'icon' };
+}
+
+type ShapeDrawer = (ctx: CanvasRenderingContext2D, S: number) => void;
+
+const FALLBACK_SHAPES: ShapeDrawer[] = [
+  // 0: disc
+  (ctx, S) => {
+    ctx.beginPath();
+    ctx.arc(S / 2, S / 2, S * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  // 1: rounded square
+  (ctx, S) => roundedRect(ctx, S * 0.16, S * 0.16, S * 0.68, S * 0.68, S * 0.12),
+  // 2: heart
+  (ctx, S) => drawHeart(ctx, S / 2, S * 0.55, S * 0.42),
+  // 3: 5-point star
+  (ctx, S) => drawStar(ctx, S / 2, S / 2, S * 0.46, 5, 0.42),
+  // 4: hexagon
+  (ctx, S) => drawPolygon(ctx, S / 2, S / 2, S * 0.44, 6, 0),
+  // 5: diamond (rotated square)
+  (ctx, S) => drawPolygon(ctx, S / 2, S / 2, S * 0.44, 4, Math.PI / 4),
+  // 6: plus / cross
+  (ctx, S) => drawCross(ctx, S / 2, S / 2, S * 0.42, S * 0.18),
+  // 7: cloud (overlapping bumps)
+  (ctx, S) => drawCloud(ctx, S / 2, S / 2, S * 0.4),
+  // 8: triangle
+  (ctx, S) => drawPolygon(ctx, S / 2, S * 0.56, S * 0.46, 3, 0),
+  // 9: oval / egg
+  (ctx, S) => {
+    ctx.beginPath();
+    ctx.ellipse(S / 2, S / 2, S * 0.36, S * 0.46, 0, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  // 10: 6-point star
+  (ctx, S) => drawStar(ctx, S / 2, S / 2, S * 0.46, 6, 0.45),
+  // 11: arrow (right-pointing chevron)
+  (ctx, S) => drawArrow(ctx, S / 2, S / 2, S * 0.46),
+];
+
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawPolygon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  n: number,
+  rotate: number,
+) {
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + rotate + (i * Math.PI * 2) / n;
+    const px = cx + Math.cos(a) * r;
+    const py = cy + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawStar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  points: number,
+  innerRatio: number,
+) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / points;
+    const rad = i % 2 === 0 ? r : r * innerRatio;
+    const px = cx + Math.cos(a) * rad;
+    const py = cy + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHeart(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+) {
+  ctx.beginPath();
+  const top = cy - r * 0.6;
+  ctx.moveTo(cx, top + r * 0.3);
+  ctx.bezierCurveTo(cx - r * 1.05, top - r * 0.45, cx - r * 1.25, top + r * 0.65, cx, cy + r * 0.85);
+  ctx.bezierCurveTo(cx + r * 1.25, top + r * 0.65, cx + r * 1.05, top - r * 0.45, cx, top + r * 0.3);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawCross(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  arm: number,
+  thick: number,
+) {
+  ctx.beginPath();
+  ctx.rect(cx - thick, cy - arm, thick * 2, arm * 2);
+  ctx.rect(cx - arm, cy - thick, arm * 2, thick * 2);
+  ctx.fill();
+}
+
+function drawCloud(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+) {
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.55, cy + r * 0.15, r * 0.5, 0, Math.PI * 2);
+  ctx.arc(cx, cy - r * 0.2, r * 0.6, 0, Math.PI * 2);
+  ctx.arc(cx + r * 0.55, cy + r * 0.15, r * 0.5, 0, Math.PI * 2);
+  ctx.arc(cx - r * 0.2, cy + r * 0.35, r * 0.5, 0, Math.PI * 2);
+  ctx.arc(cx + r * 0.2, cy + r * 0.35, r * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+) {
+  ctx.beginPath();
+  // body + arrowhead
+  ctx.moveTo(cx - r, cy - r * 0.3);
+  ctx.lineTo(cx + r * 0.2, cy - r * 0.3);
+  ctx.lineTo(cx + r * 0.2, cy - r * 0.7);
+  ctx.lineTo(cx + r, cy);
+  ctx.lineTo(cx + r * 0.2, cy + r * 0.7);
+  ctx.lineTo(cx + r * 0.2, cy + r * 0.3);
+  ctx.lineTo(cx - r, cy + r * 0.3);
+  ctx.closePath();
+  ctx.fill();
 }
 
 /** Sample the silhouette into a cols x rows boolean grid (row-major). */

@@ -2,7 +2,7 @@
 // into a downloadable video. Prefers MP4 (Instagram-friendly) where the
 // browser supports it, falls back to WebM.
 
-import { setupAnxiousMusic } from './music';
+import { setupReelMusic, type MusicTiming } from './music';
 
 export interface RecordResult {
   blob: Blob;
@@ -38,6 +38,7 @@ export async function recordCanvas(
   durationSec: number,
   onFrame: (t: number) => void,
   audioCtx?: AudioContext | null,
+  musicTiming?: MusicTiming | null,
 ): Promise<RecordResult> {
   // Draw the initial frame BEFORE the stream begins.
   onFrame(0);
@@ -54,7 +55,12 @@ export async function recordCanvas(
     try {
       if (audioCtx.state === 'suspended') await audioCtx.resume();
       const dest = audioCtx.createMediaStreamDestination();
-      setupAnxiousMusic(audioCtx, dest, durationSec);
+      const timing: MusicTiming = musicTiming ?? {
+        titlePopAt: 0.5,
+        countdownStart: 8.5,
+        ctaAt: 13.8,
+      };
+      setupReelMusic(audioCtx, dest, durationSec, timing);
       combinedStream = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...dest.stream.getAudioTracks(),

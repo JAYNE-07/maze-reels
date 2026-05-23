@@ -522,7 +522,7 @@ function drawCountdown(
   t: number,
   countdownStart: number,
   width: number,
-  height: number,
+  _height: number,
   palette: Palette,
 ) {
   const elapsed = t - countdownStart;
@@ -539,22 +539,19 @@ function drawCountdown(
   } else if (sub > 0.75) {
     const k = (sub - 0.75) / 0.25;
     alpha = 1 - k;
-    scale = 1 + k * 0.45;
+    scale = 1 + k * 0.4;
   }
 
-  // dim the maze slightly so the digit reads on top
-  ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fillRect(0, 0, width, height);
-  ctx.restore();
+  // Anchor ABOVE the maze, not over it. Lands in the cleared title slot
+  // since the title fades out the moment the countdown begins.
+  const cx = width / 2;
+  const cy = 330;
 
   // pulsing ring behind the digit
-  const cx = width / 2;
-  const cy = height / 2;
   ctx.save();
   ctx.globalAlpha = alpha * 0.85;
-  const ringR = 230 * scale;
-  const ring = ctx.createRadialGradient(cx, cy, ringR * 0.2, cx, cy, ringR);
+  const ringR = 150 * scale;
+  const ring = ctx.createRadialGradient(cx, cy, ringR * 0.15, cx, cy, ringR);
   ring.addColorStop(0, palette.ctaBg);
   ring.addColorStop(0.6, palette.ctaBg + '00');
   ring.addColorStop(1, 'rgba(0,0,0,0)');
@@ -572,15 +569,15 @@ function drawCountdown(
   ctx.translate(-cx, -cy);
   ctx.fillStyle = palette.ctaBg;
   ctx.strokeStyle = palette.ctaText;
-  ctx.lineWidth = 24;
+  ctx.lineWidth = 16;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    '900 360px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.7)';
-  ctx.shadowBlur = 50;
-  ctx.shadowOffsetY = 14;
+    '900 200px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.65)';
+  ctx.shadowBlur = 40;
+  ctx.shadowOffsetY = 10;
   ctx.strokeText(String(digit), cx, cy);
   ctx.fillText(String(digit), cx, cy);
   ctx.restore();
