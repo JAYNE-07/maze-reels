@@ -3,7 +3,7 @@ import { generateMaze } from './lib/maze';
 import { fetchSilhouette, maskGrid } from './lib/shape';
 import { fetchMarkers } from './lib/markers';
 import { baseSubjectFor, subjectFor } from './lib/themes';
-import { PALETTES, pick } from './lib/palettes';
+import { PALETTES, type Palette } from './lib/palettes';
 import { buildScene, drawFrame, REEL_TIMING, type Scene } from './lib/animate';
 import { recordCanvas } from './lib/record';
 import type { MusicTiming } from './lib/music';
@@ -48,6 +48,15 @@ const RANDOM_CTAS = [
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function shuffledPalettes(): Palette[] {
+  const out = [...PALETTES];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 type Status = 'idle' | 'working' | 'done';
 
@@ -164,6 +173,9 @@ export default function App() {
     cv.width = REEL_W;
     cv.height = REEL_H;
     const baseSeed = Math.floor(Math.random() * 1e9);
+    // Fresh shuffled palette order for THIS batch so reels never come out
+    // in the same color sequence twice.
+    const batchPalettes = shuffledPalettes();
 
     const usedSubj = new Set<number>();
     let nextSubj = 0;
@@ -173,7 +185,7 @@ export default function App() {
     for (let i = 0; i < count; i++) {
       if (cancelRef.current) break;
 
-      const palette = pick(PALETTES, i);
+      const palette = batchPalettes[i % batchPalettes.length];
       const reelCta = cta.trim() || RANDOM_CTAS[Math.floor(Math.random() * RANDOM_CTAS.length)];
       const title = TITLES[i % TITLES.length];
 

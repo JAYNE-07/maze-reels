@@ -275,18 +275,17 @@ function drawBanner(
 ) {
   ctx.save();
   ctx.globalAlpha = p;
-  // Sized to always fit "CAN YOU SOLVE THIS?" on a single line — no wrap,
-  // no encroaching on the countdown area below.
+  const { stroke, shadow } = contrast(palette.ctaBg);
   ctx.fillStyle = palette.ctaBg;
-  ctx.strokeStyle = palette.ctaText;
-  ctx.lineWidth = 9;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 10;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
     '900 70px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.5)';
-  ctx.shadowBlur = 22;
+  ctx.shadowColor = shadow;
+  ctx.shadowBlur = 28;
   ctx.shadowOffsetY = 6;
   const single = text.toUpperCase();
   ctx.strokeText(single, cx, cy);
@@ -305,17 +304,18 @@ function drawTitle(
   ctx.save();
   ctx.globalAlpha = p;
   const slide = (1 - p) * -24;
+  const { stroke, shadow } = contrast(palette.text);
   ctx.fillStyle = palette.text;
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.lineWidth = 6;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 8;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.font =
     '800 56px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.45)';
-  ctx.shadowBlur = 16;
-  ctx.shadowOffsetY = 4;
+  ctx.shadowColor = shadow;
+  ctx.shadowBlur = 22;
+  ctx.shadowOffsetY = 5;
   const lines = wrapToLines(ctx, text, 960);
   for (let i = 0; i < lines.length; i++) {
     const y = cy + slide + i * 64;
@@ -680,17 +680,18 @@ function drawCtaPop(
   ctx.scale(scale, scale);
   ctx.translate(-cx, -cy);
 
+  const { stroke: ctaStroke, shadow: ctaShadow } = contrast(palette.ctaBg);
   ctx.fillStyle = palette.ctaBg;
-  ctx.strokeStyle = palette.ctaText;
-  ctx.lineWidth = 6;
+  ctx.strokeStyle = ctaStroke;
+  ctx.lineWidth = 10;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
     '800 58px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = 22;
-  ctx.shadowOffsetY = 6;
+  ctx.shadowColor = ctaShadow;
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 8;
   // Force into ~2 lines by clamping the wrap width and splitting on natural
   // breaks ("?", " - ", " — ") when the CTA includes them.
   const lines = splitCtaLines(ctx, cta, 540);
@@ -703,12 +704,14 @@ function drawCtaPop(
   }
 
   if (handle) {
-    ctx.shadowBlur = 12;
+    const handleC = contrast(palette.text);
+    ctx.shadowColor = handleC.shadow;
+    ctx.shadowBlur = 16;
     ctx.font =
       '700 40px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
     ctx.fillStyle = palette.text;
-    ctx.strokeStyle = palette.ctaText;
+    ctx.strokeStyle = handleC.stroke;
     const hy = cy + offset + lines.length * lh + 28;
     ctx.strokeText(handle, cx, hy);
     ctx.fillText(handle, cx, hy);
@@ -750,6 +753,23 @@ function wrapToLines(
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/** Perceived luminance of a #rrggbb color (0 = black, 1 = white). */
+function lum(hex: string): number {
+  if (!hex.startsWith('#') || hex.length < 7) return 0.5;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+/** Stroke + shadow tuned to actually CONTRAST whatever the fill color is.
+ *  Light fill → dark outline/glow. Dark fill → light outline/glow. */
+function contrast(fillHex: string): { stroke: string; shadow: string } {
+  return lum(fillHex) > 0.55
+    ? { stroke: 'rgba(0,0,0,0.85)', shadow: 'rgba(0,0,0,0.7)' }
+    : { stroke: 'rgba(255,255,255,0.9)', shadow: 'rgba(255,255,255,0.55)' };
 }
 
 function mix(a: string, b: string, t: number): string {
