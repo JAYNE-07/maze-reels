@@ -205,13 +205,12 @@ export function drawFrame(
     ctx.restore();
   }
 
-  // Pause hint — sits ABOVE the maze in the safe zone (Instagram's reel
-  // UI covers ~25% of the bottom, so anything past y≈1670 gets clipped).
-  // Only visible during pure think time; fades out as the countdown
-  // takes over the same vertical band.
-  if (t > mazeEnd && t < countdownStart) {
+  // Pause hint — sits BELOW the maze, in the lower part of the page.
+  // Visible from the moment the maze appears all the way until the
+  // solution starts walking. Fades in/out so it never pops.
+  if (t > mazeEnd && t < walkStart) {
     const inP = clamp01((t - mazeEnd) / 0.25);
-    const outP = clamp01((countdownStart - t) / 0.25);
+    const outP = clamp01((walkStart - t) / 0.25);
     const alpha = Math.min(inP, outP);
     ctx.save();
     ctx.globalAlpha = alpha * 0.95;
@@ -227,7 +226,7 @@ export function drawFrame(
     ctx.shadowColor = shadow;
     ctx.shadowBlur = 12;
     const hint = '⏸  pause for more time';
-    const hintY = 410;
+    const hintY = mazeBottom - 50; // just below the silhouette, lower page
     ctx.strokeText(hint, width / 2, hintY);
     ctx.fillText(hint, width / 2, hintY);
     ctx.restore();
