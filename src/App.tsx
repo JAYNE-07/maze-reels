@@ -9,9 +9,9 @@ import { recordCanvas } from './lib/record';
 
 const REEL_W = 1080;
 const REEL_H = 1920;
-const REEL_SECONDS = 12;
+const REEL_SECONDS = 15;
 const REEL_FPS = 30;
-const COLS_FOR_REEL = 20; // easier maze — viewers can actually solve it in the think-time
+const COLS_FOR_REEL = 14; // smaller grid -> bigger cells, much easier to solve in the think-time
 
 // Subject-agnostic so a missed AI fetch never makes the title lie.
 const TITLES = [
@@ -25,18 +25,18 @@ const TITLES = [
 
 const BANNER = 'Can you solve this?';
 
-// Conversational, not hard-sell.
+// Conversational, slightly longer — wraps to 2 lines for layout balance.
 const RANDOM_CTAS = [
-  'Wanna try? Link in bio',
-  'Loved this? More in bio',
-  'Try the full book ↓',
-  'Tap the link to try',
-  'Save it, solve it later',
-  'Stuck? Try the book',
-  'Want more like this?',
-  'Check the link in bio',
-  '100+ more inside ↓',
-  'Got it? More in bio',
+  'Want more puzzles like this? The full book is in my bio!',
+  'Loved this little maze? Tap my bio for 100+ more',
+  'If you got stuck, the full maze book is in my bio',
+  'Try the whole maze book — link is in my profile ↓',
+  'More fun puzzles waiting for you? Tap the link in bio',
+  'Did you solve it? The harder ones are in my book',
+  'Hundreds more like this — check the link in my bio',
+  "Couldn't solve it? The book has the answers (and 100+ more)",
+  'Solved it in your head? Try the full book in my bio',
+  'Need more? My maze book is one tap away — link in bio',
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -324,9 +324,10 @@ export default function App() {
         </label>
 
         <p className="note">
-          Each reel is 12 s (5–6 s think-time + walk + CTA pop) at 1080×1920.
-          Leave CTA blank to randomize per reel. Recording is real-time so
-          {' '}{count} reel{count === 1 ? '' : 's'} take ~{count * 13} s plus
+          Each reel is 15 s — ~7 s of think time, 3-2-1 countdown, then the
+          solution walks and the CTA pops. 1080×1920 with anxious music.
+          Leave the CTA blank to randomize per reel. Recording is real-time
+          so {count} reel{count === 1 ? '' : 's'} take ~{count * 16} s plus
           AI fetch.
         </p>
 

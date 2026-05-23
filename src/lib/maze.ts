@@ -196,14 +196,12 @@ export function generateMaze(
   const cells = largestRegion(inside, cols, rows);
   const count = cells.reduce((a, b) => a + (b ? 1 : 0), 0);
   const total = cols * rows;
-  // Keep the maze-fillable area within a tight band so complexity stays
-  // consistent across the book — reject too-thin and too-blobby shapes.
-  const minCells = Math.max(12, Math.floor(total * 0.12));
-  const maxCells = Math.floor(total * 0.55);
+  // Reels tolerate any reasonably-sized region — priority is always
+  // delivering a video, even if the silhouette ends up generic.
+  const minCells = 8;
+  const maxCells = Math.floor(total * 0.95);
   if (count < minCells || count > maxCells) {
-    throw new Error(
-      'The shape area is out of range for the book — caller will rotate to another subject.',
-    );
+    throw new Error('shape unusable');
   }
 
   const rng = mulberry32(seed);

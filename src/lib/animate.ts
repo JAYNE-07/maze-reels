@@ -96,10 +96,10 @@ export function drawFrame(
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, width, height);
 
-  // layout
-  const sidePad = 60;
-  const mazeTop = 580;
-  const mazeBottom = height - 500;
+  // layout — bigger maze area, tighter top/bottom regions
+  const sidePad = 40;
+  const mazeTop = 470;
+  const mazeBottom = height - 260;
   const mazeAreaH = mazeBottom - mazeTop;
 
   const spanC = maze.bbox.maxC - maze.bbox.minC + 1 + 2 * MARGIN_CELLS;
@@ -110,29 +110,31 @@ export function drawFrame(
   const mx = (width - mw) / 2;
   const my = mazeTop + (mazeAreaH - mh) / 2;
 
-  // ---- 12 s timeline ----
+  // ---- 15 s timeline with explicit 3-2-1 countdown ----
   const bannerEnd = 0.5;
   const titleStart = 0.5;
   const titleEnd = 1.2;
   const mazeStart = 1.0;
   const mazeEnd = 1.8;
-  const thinkEnd = 7.5;   // ~5.7 s of static think-time
-  const walkStart = thinkEnd;
-  const walkEnd = 10.6;   // ~3.1 s walk
-  const ctaStart = 10.8;
-  const ctaEnd = 11.4;
+  const countdownStart = 8.5;  // 3-2-1 over the next 3 s (end of think time)
+  const countdownEnd = 11.5;
+  const walkStart = 11.5;
+  const walkEnd = 13.7;        // ~2.2 s walk reveal
+  const ctaStart = 13.8;
+  const ctaEnd = 14.4;
 
   // banner
   const bannerP = clamp01(t / bannerEnd);
   if (bannerP > 0) {
-    drawBanner(ctx, banner, width / 2, 180, bannerP, palette);
+    drawBanner(ctx, banner, width / 2, 150, bannerP, palette);
   }
 
   // main title with gentle bob during think time
   const titleP = clamp01((t - titleStart) / (titleEnd - titleStart));
   if (titleP > 0) {
-    const bob = t > mazeEnd && t < walkStart ? Math.sin((t - mazeEnd) * 2.4) * 6 : 0;
-    drawTitle(ctx, title, width / 2, 360 + bob, titleP, palette);
+    const fadeOut = clamp01(1 - (t - countdownStart) / 0.5);
+    const bob = t > mazeEnd && t < countdownStart ? Math.sin((t - mazeEnd) * 2.4) * 6 : 0;
+    drawTitle(ctx, title, width / 2, 320 + bob, titleP * fadeOut, palette);
   }
 
   // maze with scale-in pop
@@ -153,8 +155,8 @@ export function drawFrame(
     ctx.restore();
   }
 
-  // think-time hint
-  if (t > mazeEnd && t < walkStart) {
+  // think-time hint (before countdown kicks in)
+  if (t > mazeEnd && t < countdownStart) {
     const pulse = 0.55 + 0.45 * Math.sin((t - mazeEnd) * 3.6);
     ctx.save();
     ctx.globalAlpha = pulse * 0.9;
@@ -167,6 +169,11 @@ export function drawFrame(
     ctx.shadowBlur = 14;
     ctx.fillText('think  fast', width / 2, mazeBottom + 60);
     ctx.restore();
+  }
+
+  // 3-2-1 countdown overlay
+  if (t >= countdownStart && t < countdownEnd) {
+    drawCountdown(ctx, t, countdownStart, width, height, palette);
   }
 
   // walk + animated dashed trail
@@ -333,8 +340,8 @@ function drawMascotCommon(
   walking: boolean,
   t: number,
 ) {
-  // Sized to roughly one corridor wide — doesn't cover the maze walls.
-  const r = cell * 0.95;
+  // ~⅔ of a cell — clearly inside the corridor, never covers walls.
+  const r = cell * 0.6;
   // soft trailing glow under the mascot
   ctx.save();
   const glow = ctx.createRadialGradient(cx, cy + r * 0.4, r * 0.2, cx, cy + r * 0.4, r * 1.4);
@@ -419,7 +426,7 @@ function drawGoal(
   const cy = my + c.y;
   // throbbing halo
   const throb = 1 + Math.sin(t * 4) * 0.18;
-  const r = cell * 1.1 * throb;
+  const r = cell * 0.75 * throb;
   ctx.save();
   const halo = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.4);
   halo.addColorStop(0, 'rgba(255,210,80,0.7)');
@@ -433,7 +440,7 @@ function drawGoal(
   if (m && m.img.complete && m.img.naturalWidth) {
     const iw = m.img.naturalWidth;
     const ih = m.img.naturalHeight;
-    const baseR = cell * 1.0;
+    const baseR = cell * 0.65;
     const s = Math.min((2 * baseR) / iw, (2 * baseR) / ih);
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.55)';
@@ -441,7 +448,7 @@ function drawGoal(
     ctx.drawImage(m.img, cx - (iw * s) / 2, cy - (ih * s) / 2, iw * s, ih * s);
     ctx.restore();
   } else {
-    drawStar(ctx, cx, cy, cell * 0.95, palette.ctaBg, palette.ctaText);
+    drawStar(ctx, cx, cy, cell * 0.65, palette.ctaBg, palette.ctaText);
   }
 }
 
@@ -507,6 +514,75 @@ function drawTrail(
   }
   if (px !== null && py !== null) ctx.lineTo(px, py);
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawCountdown(
+  ctx: CanvasRenderingContext2D,
+  t: number,
+  countdownStart: number,
+  width: number,
+  height: number,
+  palette: Palette,
+) {
+  const elapsed = t - countdownStart;
+  const digit = 3 - Math.floor(elapsed); // 3 → 2 → 1
+  if (digit < 1 || digit > 3) return;
+  const sub = elapsed - Math.floor(elapsed); // 0..1 within this digit
+
+  let alpha = 1;
+  let scale = 1;
+  if (sub < 0.25) {
+    const k = sub / 0.25;
+    scale = easeOutBack(k);
+    alpha = k;
+  } else if (sub > 0.75) {
+    const k = (sub - 0.75) / 0.25;
+    alpha = 1 - k;
+    scale = 1 + k * 0.45;
+  }
+
+  // dim the maze slightly so the digit reads on top
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  // pulsing ring behind the digit
+  const cx = width / 2;
+  const cy = height / 2;
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.85;
+  const ringR = 230 * scale;
+  const ring = ctx.createRadialGradient(cx, cy, ringR * 0.2, cx, cy, ringR);
+  ring.addColorStop(0, palette.ctaBg);
+  ring.addColorStop(0.6, palette.ctaBg + '00');
+  ring.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ring;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // big bold digit
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.translate(-cx, -cy);
+  ctx.fillStyle = palette.ctaBg;
+  ctx.strokeStyle = palette.ctaText;
+  ctx.lineWidth = 24;
+  ctx.lineJoin = 'round';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font =
+    '900 360px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 50;
+  ctx.shadowOffsetY = 14;
+  ctx.strokeText(String(digit), cx, cy);
+  ctx.fillText(String(digit), cx, cy);
   ctx.restore();
 }
 
