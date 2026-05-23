@@ -48,26 +48,28 @@ export async function recordCanvas(
   }).captureStream(fps);
 
   // Combine with audio if a (caller-provided, gesture-warm) AudioContext
-  // was passed in. Caller creates it inside the click handler so the
-  // browser's user-activation rule is satisfied.
+  // was passed in.
   let combinedStream: MediaStream = videoStream;
-  if (audioCtx) {
+  let musicHandle: { dispose: () => void } | null = null;
+  if (audioCtx && audioCtx.state !== 'closed') {
     try {
       if (audioCtx.state === 'suspended') await audioCtx.resume();
       const dest = audioCtx.createMediaStreamDestination();
       const timing: MusicTiming = musicTiming ?? {
         titlePopAt: 0.5,
-        countdownStart: 8.5,
-        ctaAt: 13.8,
+        countdownStart: 6.5,
+        ctaAt: 12.0,
       };
-      setupReelMusic(audioCtx, dest, durationSec, timing);
+      musicHandle = setupReelMusic(audioCtx, dest, durationSec, timing);
       combinedStream = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...dest.stream.getAudioTracks(),
       ]);
-    } catch {
-      // Audio failed — fall back to silent video so the reel still records.
+    } catch (err) {
+      // Audio setup failed — fall back to silent video, log diagnostics.
+      console.warn('reels: audio setup failed, falling back to silent', err);
       combinedStream = videoStream;
+      musicHandle = null;
     }
   }
 
@@ -92,8 +94,26 @@ export async function recordCanvas(
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size) chunks.push(e.data);
   };
+  // Safety net: if onstop somehow doesn't fire (browser quirk on multi-reel
+  // batches) we resolve anyway after a generous timeout so the batch keeps
+  // moving instead of hanging.
   const stopped = new Promise<void>((res) => {
-    recorder.onstop = () => res();
+    let done = false;
+    recorder.onstop = () => {
+      if (!done) {
+        done = true;
+        res();
+      }
+    };
+    setTimeout(
+      () => {
+        if (!done) {
+          done = true;
+          res();
+        }
+      },
+      (durationSec + 4) * 1000,
+    );
   });
   recorder.start(100);
 
@@ -115,6 +135,12 @@ export async function recordCanvas(
   recorder.stop();
   await stopped;
   combinedStream.getTracks().forEach((tr) => tr.stop());
-  // Caller manages the AudioContext lifecycle so it can be reused across reels.
-  return { blob: new Blob(chunks, { type: mime }), mimeType: mime, extension: ext };
+  // Dispose the per-reel audio subgraph so consecutive reels don't pile up
+  // orphan nodes inside the shared AudioContext.
+  musicHandle?.dispose();
+  const blob = new Blob(chunks, { type: mime });
+  if (!blob.size) {
+    throw new Error('recorder produced no data');
+  }
+  return { blob, mimeType: mime, extension: ext };
 }

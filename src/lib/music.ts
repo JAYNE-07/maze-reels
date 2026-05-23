@@ -14,12 +14,18 @@ export interface MusicTiming {
   ctaAt: number;
 }
 
+export interface ReelMusic {
+  /** Tear down the audio subgraph created for this reel so consecutive
+   *  reels don't accumulate orphan nodes inside the shared AudioContext. */
+  dispose(): void;
+}
+
 export function setupReelMusic(
   ctx: AudioContext,
   out: AudioNode,
   durationSec: number,
   timing: MusicTiming,
-): void {
+): ReelMusic {
   const start = ctx.currentTime + 0.05;
   const master = ctx.createGain();
   master.gain.value = 0.55;
@@ -32,11 +38,21 @@ export function setupReelMusic(
   scheduleTitlePop(ctx, master, start + timing.titlePopAt);
   for (let i = 0; i < 3; i++) {
     const beepAt = start + timing.countdownStart + i;
-    // ascending pitch — 3 (550Hz) → 2 (700Hz) → 1 (880Hz)
     const freq = [550, 700, 880][i];
     scheduleCountdownBeep(ctx, master, beepAt, freq);
   }
   scheduleCtaPop(ctx, master, start + timing.ctaAt);
+
+  return {
+    dispose() {
+      try {
+        master.disconnect();
+        compressor.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+    },
+  };
 }
 
 // ---- 2. anxious background bed -- clock ticking, dominant -------------

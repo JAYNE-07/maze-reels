@@ -24,6 +24,24 @@ export interface Scene {
 
 const MARGIN_CELLS = 2;
 
+/** Single source of truth for the reel timeline — animate.ts uses these
+ *  for drawing, App.tsx passes them through to the music scheduler. */
+export const REEL_TIMING = {
+  bannerEnd: 0.5,
+  titleStart: 0.5,
+  titleEnd: 1.2,
+  mazeStart: 1.0,
+  mazeEnd: 1.8,
+  thinkEnd: 6.5,
+  countdownStart: 6.5,
+  countdownEnd: 9.5,
+  walkStart: 9.5,
+  walkEnd: 12.0,
+  ctaStart: 12.0,
+  ctaEnd: 12.6,
+  duration: 15.0,
+} as const;
+
 export function buildScene(
   width: number,
   height: number,
@@ -116,10 +134,10 @@ export function drawFrame(
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, width, height);
 
-  // layout — push the maze to fill almost the entire middle of the page
-  const sidePad = 22;
+  // layout — maze takes nearly the whole middle of the page.
+  const sidePad = 14;
   const mazeTop = 470;
-  const mazeBottom = height - 180;
+  const mazeBottom = height - 130;
   const mazeAreaH = mazeBottom - mazeTop;
 
   const spanC = maze.bbox.maxC - maze.bbox.minC + 1 + 2 * MARGIN_CELLS;
@@ -130,32 +148,34 @@ export function drawFrame(
   const mx = (width - mw) / 2;
   const my = mazeTop + (mazeAreaH - mh) / 2;
 
-  // ---- 15 s timeline with explicit 3-2-1 countdown ----
-  const bannerEnd = 0.5;
-  const titleStart = 0.5;
-  const titleEnd = 1.2;
-  const mazeStart = 1.0;
-  const mazeEnd = 1.8;
-  const countdownStart = 8.5;  // 3-2-1 over the next 3 s (end of think time)
-  const countdownEnd = 11.5;
-  const walkStart = 11.5;
-  const walkEnd = 13.7;        // ~2.2 s walk reveal
-  const ctaStart = 13.8;
-  const ctaEnd = 14.4;
+  const {
+    bannerEnd,
+    titleStart,
+    titleEnd,
+    mazeStart,
+    mazeEnd,
+    countdownStart,
+    countdownEnd,
+    walkStart,
+    walkEnd,
+    ctaStart,
+    ctaEnd,
+  } = REEL_TIMING;
 
-  // banner
+  // banner — kept small so it sits cleanly on a single line above
+  // everything else and never overlaps the countdown.
   const bannerP = clamp01(t / bannerEnd);
   if (bannerP > 0) {
-    drawBanner(ctx, banner, width / 2, 150, bannerP, palette);
+    drawBanner(ctx, banner, width / 2, 130, bannerP, palette);
   }
 
-  // main title with gentle bob during think time — fades out BEFORE the
-  // countdown begins so the digit lands in cleared space.
+  // main title — fades out BEFORE the countdown so the digit lands in
+  // visually-empty space, with extra clearance.
   const titleP = clamp01((t - titleStart) / (titleEnd - titleStart));
   if (titleP > 0) {
-    const fadeOut = clamp01(1 - (t - (countdownStart - 0.4)) / 0.3);
-    const bob = t > mazeEnd && t < countdownStart - 0.4 ? Math.sin((t - mazeEnd) * 2.4) * 6 : 0;
-    drawTitle(ctx, title, width / 2, 290 + bob, titleP * fadeOut, palette);
+    const fadeOut = clamp01(1 - (t - (countdownStart - 0.6)) / 0.4);
+    const bob = t > mazeEnd && t < countdownStart - 0.6 ? Math.sin((t - mazeEnd) * 2.4) * 6 : 0;
+    drawTitle(ctx, title, width / 2, 240 + bob, titleP * fadeOut, palette);
   }
 
   // maze with scale-in pop
@@ -253,26 +273,22 @@ function drawBanner(
 ) {
   ctx.save();
   ctx.globalAlpha = p;
-  // big sticker-style hook — drop the pill, let the words breathe
+  // Sized to always fit "CAN YOU SOLVE THIS?" on a single line — no wrap,
+  // no encroaching on the countdown area below.
   ctx.fillStyle = palette.ctaBg;
   ctx.strokeStyle = palette.ctaText;
-  ctx.lineWidth = 12;
+  ctx.lineWidth = 9;
   ctx.lineJoin = 'round';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    '900 96px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = 28;
-  ctx.shadowOffsetY = 8;
-  const lines = wrapToLines(ctx, text.toUpperCase(), 960);
-  const lh = 100;
-  const offset = -((lines.length - 1) * lh) / 2;
-  for (let i = 0; i < lines.length; i++) {
-    const y = cy + offset + i * lh;
-    ctx.strokeText(lines[i], cx, y);
-    ctx.fillText(lines[i], cx, y);
-  }
+    '900 70px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 22;
+  ctx.shadowOffsetY = 6;
+  const single = text.toUpperCase();
+  ctx.strokeText(single, cx, cy);
+  ctx.fillText(single, cx, cy);
   ctx.restore();
 }
 
@@ -568,15 +584,17 @@ function drawCountdown(
     scale = 1 + k * 0.4;
   }
 
-  // Land in the cleared space between the banner+title row and the maze.
-  // Title fades out 0.4 s before countdownStart so this slot is empty.
+  // Land in the cleared band between title (faded out) and the maze top.
+  // Banner sits at y=130, title at y=240, maze starts at y=470, so the
+  // countdown digit at y=360 with 130px font (bbox ~y 295-425) sits
+  // entirely below the banner and above the maze.
   const cx = width / 2;
-  const cy = 380;
+  const cy = 360;
 
   // pulsing ring behind the digit
   ctx.save();
   ctx.globalAlpha = alpha * 0.85;
-  const ringR = 110 * scale;
+  const ringR = 95 * scale;
   const ring = ctx.createRadialGradient(cx, cy, ringR * 0.15, cx, cy, ringR);
   ring.addColorStop(0, palette.ctaBg);
   ring.addColorStop(0.6, palette.ctaBg + '00');
@@ -600,7 +618,7 @@ function drawCountdown(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    '900 150px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+    '900 130px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
   ctx.shadowColor = 'rgba(0,0,0,0.65)';
   ctx.shadowBlur = 40;
   ctx.shadowOffsetY = 10;

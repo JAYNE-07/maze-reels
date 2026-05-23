@@ -4,12 +4,18 @@ import { fetchSilhouette, maskGrid } from './lib/shape';
 import { fetchMarkers } from './lib/markers';
 import { baseSubjectFor, subjectFor } from './lib/themes';
 import { PALETTES, pick } from './lib/palettes';
-import { buildScene, drawFrame, type Scene } from './lib/animate';
+import { buildScene, drawFrame, REEL_TIMING, type Scene } from './lib/animate';
 import { recordCanvas } from './lib/record';
+import type { MusicTiming } from './lib/music';
 
 const REEL_W = 1080;
 const REEL_H = 1920;
-const REEL_SECONDS = 15;
+const REEL_SECONDS = REEL_TIMING.duration;
+const MUSIC_TIMING: MusicTiming = {
+  titlePopAt: REEL_TIMING.titleStart,
+  countdownStart: REEL_TIMING.countdownStart,
+  ctaAt: REEL_TIMING.ctaStart,
+};
 const REEL_FPS = 30;
 const COLS_FOR_REEL = 14; // smaller grid -> bigger cells, much easier to solve in the think-time
 
@@ -216,21 +222,34 @@ export default function App() {
         continue;
       }
 
-      setProgress(`Reel ${i + 1} of ${count} — recording 12 s (${palette.name})`);
+      setProgress(`Reel ${i + 1} of ${count} — recording ${REEL_SECONDS} s (${palette.name})`);
       const sceneFinal = scene;
+      const drawFn = (t: number) => drawFrame(ctx, sceneFinal, t);
       let result;
       try {
         result = await recordCanvas(
           cv,
           REEL_FPS,
           REEL_SECONDS,
-          (t) => drawFrame(ctx, sceneFinal, t),
+          drawFn,
           withAudio ? audioCtxRef.current : null,
+          MUSIC_TIMING,
         );
       } catch (e) {
-        appendLog(`✗ reel ${i + 1}: ${e instanceof Error ? e.message : 'recording failed'}`);
-        skipped++;
-        continue;
+        // Audio path failed — recoverable. Retry the same reel as a silent
+        // recording so the slot doesn't get dropped from the batch.
+        appendLog(
+          `… reel ${i + 1}: audio recording failed (${e instanceof Error ? e.message : 'error'}), retrying silent`,
+        );
+        try {
+          result = await recordCanvas(cv, REEL_FPS, REEL_SECONDS, drawFn, null, null);
+        } catch (e2) {
+          appendLog(
+            `✗ reel ${i + 1}: recording failed (${e2 instanceof Error ? e2.message : 'error'})`,
+          );
+          skipped++;
+          continue;
+        }
       }
 
       const url = URL.createObjectURL(result.blob);
@@ -324,11 +343,11 @@ export default function App() {
         </label>
 
         <p className="note">
-          Each reel is 15 s — ~7 s of think time, 3-2-1 countdown, then the
-          solution walks and the CTA pops. 1080×1920 with anxious music.
-          Leave the CTA blank to randomize per reel. Recording is real-time
-          so {count} reel{count === 1 ? '' : 's'} take ~{count * 16} s plus
-          AI fetch.
+          Each reel is 15 s — ~4.5 s think time, 3-2-1 countdown, solution
+          walk, then ~3 s of CTA. 1080×1920 with ticking-clock background
+          and event sounds at title, countdown and CTA. Leave the CTA blank
+          to randomize per reel. Recording is real-time so {count} reel
+          {count === 1 ? '' : 's'} take ~{count * 16} s plus AI fetch.
         </p>
 
         <div className="row actions">
