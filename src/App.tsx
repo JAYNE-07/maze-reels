@@ -162,7 +162,6 @@ export default function App() {
     const cv = canvasRef.current!;
     cv.width = REEL_W;
     cv.height = REEL_H;
-    const ctx = cv.getContext('2d')!;
     const baseSeed = Math.floor(Math.random() * 1e9);
 
     const usedSubj = new Set<number>();
@@ -225,7 +224,10 @@ export default function App() {
 
       setProgress(`Reel ${i + 1} of ${count} — recording ${REEL_SECONDS} s (${palette.name})`);
       const sceneFinal = scene;
-      const drawFn = (t: number) => drawFrame(ctx, sceneFinal, t);
+      // drawFn now receives the (offscreen) recording canvas's ctx; record.ts
+      // mirrors each frame to the preview canvas separately.
+      const drawFn = (recCtx: CanvasRenderingContext2D, t: number) =>
+        drawFrame(recCtx, sceneFinal, t);
       let result;
       try {
         result = await recordCanvas(
@@ -237,8 +239,6 @@ export default function App() {
           MUSIC_TIMING,
         );
       } catch (e) {
-        // Audio path failed — recoverable. Retry the same reel as a silent
-        // recording so the slot doesn't get dropped from the batch.
         appendLog(
           `… reel ${i + 1}: audio recording failed (${e instanceof Error ? e.message : 'error'}), retrying silent`,
         );
@@ -268,7 +268,9 @@ export default function App() {
       appendLog(`✓ reel ${i + 1}: ready (${(result.blob.size / 1e6).toFixed(1)} MB, ${palette.name})`);
       made++;
 
-      if (i < count - 1) await sleep(900);
+      // Slightly longer gap between reels lets the browser fully release
+       // the previous recorder + tracks before the next one starts.
+      if (i < count - 1) await sleep(1500);
     }
     setProgress('');
     setStatus('done');

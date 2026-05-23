@@ -37,9 +37,23 @@ export function setupReelMusic(
   compressor.ratio.value = 4;
   master.connect(compressor).connect(out);
 
-  // The anxious bed only runs up to the moment the solution starts
-  // walking — silence frames the reveal, then the CTA pop punctuates it.
-  scheduleAnxiousBed(ctx, master, start, Math.min(durationSec, timing.walkStart));
+  // Separate gain for the anxious bed (clock ticks + heartbeat) so it can
+  // FADE OUT smoothly just before the solution walks, while the one-shot
+  // CTA pop and other sounds keep playing at full volume.
+  const bedGain = ctx.createGain();
+  bedGain.gain.value = 1;
+  bedGain.connect(master);
+
+  const bedEnd = Math.min(durationSec, timing.walkStart);
+  scheduleAnxiousBed(ctx, bedGain, start, bedEnd);
+
+  // Fade the bed over the last 1.0 s before walk start. Linear from
+  // full -> silence, then a tiny ramp-out to zero to avoid any click.
+  const fadeStart = start + Math.max(0, timing.walkStart - 1.0);
+  const fadeEnd = start + timing.walkStart;
+  bedGain.gain.setValueAtTime(1, fadeStart);
+  bedGain.gain.linearRampToValueAtTime(0, fadeEnd);
+
   scheduleTitlePop(ctx, master, start + timing.titlePopAt);
   for (let i = 0; i < 3; i++) {
     const beepAt = start + timing.countdownStart + i;
@@ -53,6 +67,7 @@ export function setupReelMusic(
       try {
         master.disconnect();
         compressor.disconnect();
+        bedGain.disconnect();
       } catch {
         /* already disconnected */
       }

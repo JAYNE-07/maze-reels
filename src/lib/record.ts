@@ -1,6 +1,10 @@
-// Record an animated canvas (and optionally a procedural music track)
-// into a downloadable video. Prefers MP4 (Instagram-friendly) where the
-// browser supports it, falls back to WebM.
+// Record an animated canvas into a downloadable video.
+//
+// Critical: every reel gets its OWN offscreen canvas for recording. The
+// caller's "preview canvas" is only used as a display mirror. This
+// guarantees that frames drawn for reel N+1 can never end up captured
+// inside reel N's MediaRecorder, even if browser timing for stream
+// shutdown is fuzzy.
 
 import { setupReelMusic, type MusicTiming } from './music';
 
@@ -32,23 +36,38 @@ function pickMime(): { mime: string; ext: string } {
   return { mime: 'video/webm', ext: 'webm' };
 }
 
+/** The frame draw function is given the destination context so we can
+ *  route it to the (isolated) recording canvas, not the preview. */
+export type DrawFrame = (
+  ctx: CanvasRenderingContext2D,
+  t: number,
+) => void;
+
 export async function recordCanvas(
-  canvas: HTMLCanvasElement,
+  previewCanvas: HTMLCanvasElement,
   fps: number,
   durationSec: number,
-  onFrame: (t: number) => void,
+  drawFrame: DrawFrame,
   audioCtx?: AudioContext | null,
   musicTiming?: MusicTiming | null,
 ): Promise<RecordResult> {
-  // Draw the initial frame BEFORE the stream begins.
-  onFrame(0);
+  // Fresh, isolated canvas for THIS reel's recording. No state from the
+  // previous reel can possibly leak in.
+  const recordCv = document.createElement('canvas');
+  recordCv.width = previewCanvas.width;
+  recordCv.height = previewCanvas.height;
+  const recordCtx = recordCv.getContext('2d')!;
+  const previewCtx = previewCanvas.getContext('2d')!;
 
-  const videoStream = (canvas as unknown as {
+  // First frame, then mirror.
+  drawFrame(recordCtx, 0);
+  previewCtx.drawImage(recordCv, 0, 0);
+
+  const videoStream = (recordCv as unknown as {
     captureStream: (fps: number) => MediaStream;
   }).captureStream(fps);
 
-  // Combine with audio if a (caller-provided, gesture-warm) AudioContext
-  // was passed in.
+  // Optional audio routing (caller passes the gesture-warm AudioContext).
   let combinedStream: MediaStream = videoStream;
   let musicHandle: { dispose: () => void } | null = null;
   if (audioCtx && audioCtx.state !== 'closed') {
@@ -67,7 +86,6 @@ export async function recordCanvas(
         ...dest.stream.getAudioTracks(),
       ]);
     } catch (err) {
-      // Audio setup failed — fall back to silent video, log diagnostics.
       console.warn('reels: audio setup failed, falling back to silent', err);
       combinedStream = videoStream;
       musicHandle = null;
@@ -83,8 +101,6 @@ export async function recordCanvas(
       audioBitsPerSecond: 128_000,
     });
   } catch {
-    // If the chosen mime can't accept audio, retry with the silent stream
-    // so the reel still saves rather than throwing the whole batch away.
     combinedStream = videoStream;
     recorder = new MediaRecorder(videoStream, {
       mimeType: mime,
@@ -95,50 +111,54 @@ export async function recordCanvas(
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size) chunks.push(e.data);
   };
-  // Safety net: if onstop somehow doesn't fire (browser quirk on multi-reel
-  // batches) we resolve anyway after a generous timeout so the batch keeps
-  // moving instead of hanging.
-  const stopped = new Promise<void>((res) => {
-    let done = false;
+  // Wait until the recorder ACTUALLY transitions to inactive — no silent
+  // early returns that would let the next reel start drawing while this
+  // recorder is still capturing.
+  const stopped = new Promise<void>((resolve, reject) => {
+    let settled = false;
     recorder.onstop = () => {
-      if (!done) {
-        done = true;
-        res();
+      if (!settled) {
+        settled = true;
+        resolve();
       }
     };
-    setTimeout(
-      () => {
-        if (!done) {
-          done = true;
-          res();
-        }
-      },
-      (durationSec + 4) * 1000,
-    );
+    setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('MediaRecorder.onstop timed out'));
+      }
+    }, 30_000);
   });
-  recorder.start(100);
+  // Single-chunk mode (no timeslice) — one complete blob at stop. Avoids
+  // potential fragment-stitching issues on some browsers.
+  recorder.start();
 
   const start = performance.now();
   await new Promise<void>((resolve) => {
     const tick = (now: number) => {
       const t = (now - start) / 1000;
       if (t >= durationSec) {
-        onFrame(durationSec);
+        drawFrame(recordCtx, durationSec);
+        previewCtx.drawImage(recordCv, 0, 0);
         resolve();
         return;
       }
-      onFrame(t);
+      drawFrame(recordCtx, t);
+      previewCtx.drawImage(recordCv, 0, 0);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });
-  await new Promise((r) => setTimeout(r, 150));
+
+  // Let the recorder flush its final buffer cleanly.
+  await new Promise((r) => setTimeout(r, 200));
   recorder.stop();
   await stopped;
+  // Belt-and-braces: tear down tracks and clean up after onstop has fired.
   combinedStream.getTracks().forEach((tr) => tr.stop());
-  // Dispose the per-reel audio subgraph so consecutive reels don't pile up
-  // orphan nodes inside the shared AudioContext.
+  await new Promise((r) => setTimeout(r, 100));
   musicHandle?.dispose();
+
   const blob = new Blob(chunks, { type: mime });
   if (!blob.size) {
     throw new Error('recorder produced no data');
