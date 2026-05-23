@@ -25,18 +25,18 @@ const TITLES = [
 
 const BANNER = 'Can you solve this?';
 
-// Conversational, slightly longer — wraps to 2 lines for layout balance.
+// Provocative "you're too good for this" tone — wraps cleanly to 2 lines.
 const RANDOM_CTAS = [
-  'Want more puzzles like this? The full book is in my bio!',
-  'Loved this little maze? Tap my bio for 100+ more',
-  'If you got stuck, the full maze book is in my bio',
-  'Try the whole maze book — link is in my profile ↓',
-  'More fun puzzles waiting for you? Tap the link in bio',
-  'Did you solve it? The harder ones are in my book',
-  'Hundreds more like this — check the link in my bio',
-  "Couldn't solve it? The book has the answers (and 100+ more)",
-  'Solved it in your head? Try the full book in my bio',
-  'Need more? My maze book is one tap away — link in bio',
+  'Too easy for you? Real challenges are in my bio',
+  'Think this is simple? The hard ones are in my bio',
+  'Want a real challenge? Tap the link in my bio',
+  'Solved it instantly? Try the book — link in bio',
+  "That was the warm-up. Brain-burners in my bio",
+  'Bored already? The real maze book is in my bio',
+  'Too smart for this? Try the puzzle book in bio',
+  'If you got it fast, you need the book in my bio',
+  "Think you're a pro? The book will prove it — link in bio",
+  'Want something harder? My puzzle book is in my bio',
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

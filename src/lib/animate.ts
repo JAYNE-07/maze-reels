@@ -73,6 +73,26 @@ function cellCenter(maze: Maze, idx: number, cell: number) {
   };
 }
 
+// Direction offsets matching the maze module's convention: 0=N 1=E 2=S 3=W.
+const ODX = [0, 1, 0, -1];
+const ODY = [-1, 0, 1, 0];
+
+/** Position OUTSIDE the boundary cell along its opening direction —
+ *  used to place the start mascot and goal at the maze's gates. */
+function outsidePos(
+  maze: Maze,
+  idx: number,
+  openDir: number,
+  cell: number,
+): { x: number; y: number } {
+  const c = cellCenter(maze, idx, cell);
+  if (openDir < 0) return c;
+  return {
+    x: c.x + ODX[openDir] * cell * 1.05,
+    y: c.y + ODY[openDir] * cell * 1.05,
+  };
+}
+
 export function drawFrame(
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -96,10 +116,10 @@ export function drawFrame(
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, width, height);
 
-  // layout — bigger maze area, tighter top/bottom regions
-  const sidePad = 40;
+  // layout — push the maze to fill almost the entire middle of the page
+  const sidePad = 22;
   const mazeTop = 470;
-  const mazeBottom = height - 260;
+  const mazeBottom = height - 180;
   const mazeAreaH = mazeBottom - mazeTop;
 
   const spanC = maze.bbox.maxC - maze.bbox.minC + 1 + 2 * MARGIN_CELLS;
@@ -129,12 +149,13 @@ export function drawFrame(
     drawBanner(ctx, banner, width / 2, 150, bannerP, palette);
   }
 
-  // main title with gentle bob during think time
+  // main title with gentle bob during think time — fades out BEFORE the
+  // countdown begins so the digit lands in cleared space.
   const titleP = clamp01((t - titleStart) / (titleEnd - titleStart));
   if (titleP > 0) {
-    const fadeOut = clamp01(1 - (t - countdownStart) / 0.5);
-    const bob = t > mazeEnd && t < countdownStart ? Math.sin((t - mazeEnd) * 2.4) * 6 : 0;
-    drawTitle(ctx, title, width / 2, 320 + bob, titleP * fadeOut, palette);
+    const fadeOut = clamp01(1 - (t - (countdownStart - 0.4)) / 0.3);
+    const bob = t > mazeEnd && t < countdownStart - 0.4 ? Math.sin((t - mazeEnd) * 2.4) * 6 : 0;
+    drawTitle(ctx, title, width / 2, 290 + bob, titleP * fadeOut, palette);
   }
 
   // maze with scale-in pop
@@ -149,9 +170,14 @@ export function drawFrame(
     ctx.scale(popScale, popScale);
     ctx.translate(-cx, -cy);
     drawMazeWalls(ctx, maze, mx, my, cell, palette.wall);
-    const startC = cellCenter(maze, maze.start, cell);
-    drawStartMascot(ctx, markers.start, mx + startC.x, my + startC.y, cell, palette);
-    drawGoal(ctx, maze, markers.end, mx, my, cell, t, palette);
+    // Goal sits OUTSIDE the maze at the exit gate; visible throughout.
+    const goalPos = outsidePos(maze, maze.end, maze.endOpen, cell);
+    drawGoalAt(ctx, mx + goalPos.x, my + goalPos.y, cell, t, palette, markers.end);
+    // Start mascot sits OUTSIDE the maze at the entrance gate, before walk.
+    if (t < walkStart) {
+      const startPos = outsidePos(maze, maze.start, maze.startOpen, cell);
+      drawStartMascot(ctx, markers.start, mx + startPos.x, my + startPos.y, cell, palette);
+    }
     ctx.restore();
   }
 
@@ -176,29 +202,36 @@ export function drawFrame(
     drawCountdown(ctx, t, countdownStart, width, height, palette);
   }
 
-  // walk + animated dashed trail
-  if (t >= walkStart && t <= walkEnd + 0.4) {
+  // walk + animated dashed trail.
+  // Path is extended with virtual cells OUTSIDE the entry/exit gates so the
+  // mascot enters through the gate and exits to meet the goal outside.
+  if (t >= walkStart) {
+    const startOut = outsidePos(maze, maze.start, maze.startOpen, cell);
+    const endOut = outsidePos(maze, maze.end, maze.endOpen, cell);
+    const positions = [
+      startOut,
+      ...solutionPath.map((idx) => cellCenter(maze, idx, cell)),
+      endOut,
+    ];
+    const segs = positions.length - 1;
     const wp = clamp01((t - walkStart) / (walkEnd - walkStart));
-    const segs = Math.max(1, solutionPath.length - 1);
     const segIdxRaw = wp * segs;
     const segIdx = Math.min(segs - 1, Math.floor(segIdxRaw));
     const segT = clamp01(segIdxRaw - segIdx);
-    const a = cellCenter(maze, solutionPath[segIdx], cell);
-    const b = cellCenter(maze, solutionPath[segIdx + 1], cell);
+    const a = positions[segIdx];
+    const b = positions[segIdx + 1];
     const px = mx + lerp(a.x, b.x, easeInOut(segT));
     const py = my + lerp(a.y, b.y, easeInOut(segT));
-    const bob = Math.sin(t * 18) * cell * 0.1;
+    const bob = Math.sin(t * 18) * cell * 0.08;
 
-    drawTrail(ctx, maze, solutionPath, segIdx, mx, my, cell, px, py, palette.trail, t);
+    drawExtendedTrail(ctx, positions, segIdx, mx, my, cell, px, py, palette.trail, t);
     drawWalkingMascot(ctx, markers.start, px, py + bob, cell, palette, t);
-  } else if (t > walkEnd + 0.4) {
-    drawTrail(ctx, maze, solutionPath, solutionPath.length - 1, mx, my, cell, null, null, palette.trail, t);
-    const endC = cellCenter(maze, maze.end, cell);
-    const bob = Math.sin(t * 18) * cell * 0.07;
-    drawWalkingMascot(ctx, markers.start, mx + endC.x, my + endC.y + bob, cell, palette, t);
-    // confetti burst from the goal
-    const cp = clamp01((t - (walkEnd + 0.05)) / 1.4);
-    if (cp > 0) drawConfetti(ctx, mx + endC.x, my + endC.y, cp, scene.seedSalt);
+
+    // confetti burst once the mascot exits the maze
+    if (t > walkEnd + 0.05) {
+      const cp = clamp01((t - (walkEnd + 0.05)) / 1.4);
+      drawConfetti(ctx, mx + endOut.x, my + endOut.y, cp, scene.seedSalt);
+    }
   }
 
   // CTA pop
@@ -411,22 +444,18 @@ function drawSmiley(
   ctx.restore();
 }
 
-function drawGoal(
+function drawGoalAt(
   ctx: CanvasRenderingContext2D,
-  maze: Maze,
-  m: MarkerImg | null,
-  mx: number,
-  my: number,
+  cx: number,
+  cy: number,
   cell: number,
   t: number,
   palette: Palette,
+  m: MarkerImg | null,
 ) {
-  const c = cellCenter(maze, maze.end, cell);
-  const cx = mx + c.x;
-  const cy = my + c.y;
   // throbbing halo
   const throb = 1 + Math.sin(t * 4) * 0.18;
-  const r = cell * 0.75 * throb;
+  const r = cell * 0.85 * throb;
   ctx.save();
   const halo = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.4);
   halo.addColorStop(0, 'rgba(255,210,80,0.7)');
@@ -483,16 +512,15 @@ function drawStar(
   ctx.restore();
 }
 
-function drawTrail(
+function drawExtendedTrail(
   ctx: CanvasRenderingContext2D,
-  maze: Maze,
-  path: number[],
+  positions: { x: number; y: number }[],
   upTo: number,
   mx: number,
   my: number,
   cell: number,
-  px: number | null,
-  py: number | null,
+  px: number,
+  py: number,
   color: string,
   t: number,
 ) {
@@ -506,13 +534,11 @@ function drawTrail(
   ctx.shadowColor = color;
   ctx.shadowBlur = cell * 0.4;
   ctx.beginPath();
-  const first = cellCenter(maze, path[0], cell);
-  ctx.moveTo(mx + first.x, my + first.y);
+  ctx.moveTo(mx + positions[0].x, my + positions[0].y);
   for (let i = 1; i <= upTo; i++) {
-    const c = cellCenter(maze, path[i], cell);
-    ctx.lineTo(mx + c.x, my + c.y);
+    ctx.lineTo(mx + positions[i].x, my + positions[i].y);
   }
-  if (px !== null && py !== null) ctx.lineTo(px, py);
+  ctx.lineTo(px, py);
   ctx.stroke();
   ctx.restore();
 }
@@ -542,15 +568,15 @@ function drawCountdown(
     scale = 1 + k * 0.4;
   }
 
-  // Anchor ABOVE the maze, not over it. Lands in the cleared title slot
-  // since the title fades out the moment the countdown begins.
+  // Land in the cleared space between the banner+title row and the maze.
+  // Title fades out 0.4 s before countdownStart so this slot is empty.
   const cx = width / 2;
-  const cy = 330;
+  const cy = 380;
 
   // pulsing ring behind the digit
   ctx.save();
   ctx.globalAlpha = alpha * 0.85;
-  const ringR = 150 * scale;
+  const ringR = 110 * scale;
   const ring = ctx.createRadialGradient(cx, cy, ringR * 0.15, cx, cy, ringR);
   ring.addColorStop(0, palette.ctaBg);
   ring.addColorStop(0.6, palette.ctaBg + '00');
@@ -574,7 +600,7 @@ function drawCountdown(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font =
-    '900 200px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+    '900 150px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
   ctx.shadowColor = 'rgba(0,0,0,0.65)';
   ctx.shadowBlur = 40;
   ctx.shadowOffsetY = 10;

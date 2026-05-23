@@ -39,53 +39,65 @@ export function setupReelMusic(
   scheduleCtaPop(ctx, master, start + timing.ctaAt);
 }
 
-// ---- 2. anxious background bed -----------------------------------------
+// ---- 2. anxious background bed -- clock ticking, dominant -------------
 function scheduleAnxiousBed(
   ctx: AudioContext,
   out: AudioNode,
   start: number,
   durationSec: number,
 ) {
-  const bpm = 132;
-  const beat = 60 / bpm;
+  // Steady clock at 120 BPM (a tick every half-second). Tick-tock pitch
+  // alternation gives the unmistakable wall-clock feel.
+  const tickInterval = 0.5;
+  const ticksCount = Math.floor(durationSec / tickInterval);
+  for (let i = 0; i < ticksCount; i++) {
+    const when = start + i * tickInterval;
+    // tick (higher) on even beats, tock (lower) on odd
+    const isHigh = i % 2 === 0;
+    scheduleClockTick(ctx, out, when, isHigh ? 2400 : 1700, 0.16);
+  }
 
-  // low drone, slowly rising in pitch and volume
-  const drone = ctx.createOscillator();
-  drone.type = 'sawtooth';
-  drone.frequency.setValueAtTime(55, start);
-  drone.frequency.exponentialRampToValueAtTime(105, start + durationSec * 0.7);
-  drone.frequency.exponentialRampToValueAtTime(160, start + durationSec - 0.1);
-  const droneFilter = ctx.createBiquadFilter();
-  droneFilter.type = 'lowpass';
-  droneFilter.frequency.setValueAtTime(180, start);
-  droneFilter.frequency.exponentialRampToValueAtTime(640, start + durationSec - 0.4);
-  const droneG = ctx.createGain();
-  droneG.gain.setValueAtTime(0, start);
-  droneG.gain.linearRampToValueAtTime(0.07, start + 0.5);
-  droneG.gain.linearRampToValueAtTime(0.15, start + durationSec * 0.6);
-  droneG.gain.linearRampToValueAtTime(0.2, start + durationSec - 0.4);
-  droneG.gain.linearRampToValueAtTime(0, start + durationSec);
-  drone.connect(droneFilter).connect(droneG).connect(out);
-  drone.start(start);
-  drone.stop(start + durationSec + 0.1);
-
-  // heartbeat thump on every beat — intensifies over time
-  const beatsCount = Math.floor(durationSec / beat);
-  for (let i = 0; i < beatsCount; i++) {
-    const when = start + i * beat;
+  // Faint sub-heartbeat every 2 beats to keep tension under the ticks.
+  const thumpInterval = 1.0;
+  const thumpsCount = Math.floor(durationSec / thumpInterval);
+  for (let i = 0; i < thumpsCount; i++) {
+    const when = start + i * thumpInterval;
     const thump = ctx.createOscillator();
     thump.type = 'sine';
-    thump.frequency.setValueAtTime(82, when);
-    thump.frequency.exponentialRampToValueAtTime(38, when + 0.12);
+    thump.frequency.setValueAtTime(72, when);
+    thump.frequency.exponentialRampToValueAtTime(36, when + 0.12);
     const g = ctx.createGain();
-    const intensity = 0.15 + (i / beatsCount) * 0.22;
+    const intensity = 0.06 + (i / Math.max(1, thumpsCount)) * 0.12;
     g.gain.setValueAtTime(0, when);
     g.gain.linearRampToValueAtTime(intensity, when + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.001, when + 0.16);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.18);
     thump.connect(g).connect(out);
     thump.start(when);
-    thump.stop(when + 0.2);
+    thump.stop(when + 0.22);
   }
+}
+
+function scheduleClockTick(
+  ctx: AudioContext,
+  out: AudioNode,
+  when: number,
+  freq: number,
+  gain: number,
+) {
+  // Sharp filtered square — reads as a mechanical clock tick.
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 1400;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, when);
+  g.gain.linearRampToValueAtTime(gain, when + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.001, when + 0.06);
+  osc.connect(filter).connect(g).connect(out);
+  osc.start(when);
+  osc.stop(when + 0.08);
 }
 
 // ---- 1. title pop -------------------------------------------------------
