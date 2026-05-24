@@ -211,12 +211,12 @@ export function generateMaze(
   const root = cells.indexOf(true);
   const stack = [root];
   visited[root] = 1;
-  // Growing-tree carver: 55% of iterations pick a random earlier cell
-  // from the frontier (vs. always-deepest), giving short branches off
-  // existing paths and producing many more dead-end side passages.
+  // Growing-tree carver: only 25% random-pick — mostly recursive-backtracker
+  // behaviour, which produces long winding corridors instead of jaggy
+  // short stubs.
   while (stack.length) {
     const pickIdx =
-      stack.length > 3 && rng() < 0.55
+      stack.length > 3 && rng() < 0.25
         ? Math.floor(rng() * stack.length)
         : stack.length - 1;
     const cur = stack[pickIdx];
@@ -239,7 +239,7 @@ export function generateMaze(
     if (!advanced) stack.splice(pickIdx, 1);
   }
 
-  // Moderate braiding: ~55% of dead-ends get punched out so most stubs
+  // Moderate braiding: ~40% of dead-ends get punched out so most stubs
   // become loops, but we don't shred every wall (otherwise the maze
   // reads as noise).
   const deadEnds: number[] = [];
@@ -253,7 +253,7 @@ export function generateMaze(
     if (degree === 1) deadEnds.push(i);
   }
   for (const idx of deadEnds) {
-    if (rng() > 0.55) continue;
+    if (rng() > 0.4) continue;
     const candidates: number[] = [];
     for (let d = 0; d < 4; d++) {
       const nb = neighbor(idx, d, cols, rows);
@@ -267,16 +267,16 @@ export function generateMaze(
     }
   }
 
-  // Extra long open corridors: 3 random-walk carves of 12-20 cells each.
-  // These produce visibly continuous open alternative routes (not the
-  // scattered pinprick openings the previous random-wall pass made).
+  // Extra long open corridors: 5 random-walk carves of 8-14 cells each
+  // (sized for the 14-col grid). These produce visibly continuous open
+  // alternative routes that span a meaningful fraction of the maze.
   const cellList: number[] = [];
   for (let i = 0; i < cells.length; i++) if (cells[i]) cellList.push(i);
-  const numExtra = 3;
+  const numExtra = 5;
   for (let k = 0; k < numExtra; k++) {
     if (cellList.length === 0) break;
     let cur = cellList[Math.floor(rng() * cellList.length)];
-    const steps = 12 + Math.floor(rng() * 9);
+    const steps = 8 + Math.floor(rng() * 7);
     let lastDir = -1;
     for (let s = 0; s < steps; s++) {
       const dirs = [0, 1, 2, 3];
