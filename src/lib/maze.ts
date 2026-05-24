@@ -239,10 +239,9 @@ export function generateMaze(
     if (!advanced) stack.splice(pickIdx, 1);
   }
 
-  // Aggressive braiding: ~85% of dead-ends get a wall punched out so
-  // they no longer terminate. With low braiding rates the "alternatives"
-  // looked like obvious stubs; at 85% almost every branch continues into
-  // another corridor instead of closing off after one cell.
+  // Moderate braiding: ~55% of dead-ends get punched out so most stubs
+  // become loops, but we don't shred every wall (otherwise the maze
+  // reads as noise).
   const deadEnds: number[] = [];
   for (let i = 0; i < cells.length; i++) {
     if (!cells[i]) continue;
@@ -254,7 +253,7 @@ export function generateMaze(
     if (degree === 1) deadEnds.push(i);
   }
   for (const idx of deadEnds) {
-    if (rng() > 0.85) continue;
+    if (rng() > 0.55) continue;
     const candidates: number[] = [];
     for (let d = 0; d < 4; d++) {
       const nb = neighbor(idx, d, cols, rows);
@@ -268,19 +267,39 @@ export function generateMaze(
     }
   }
 
-  // Extra mid-corridor openings: knock out ~14% of remaining interior
-  // walls anywhere (not just at dead-ends). This produces cross-junctions
-  // along long corridors, so the viewer sees several long competing
-  // routes between start and goal instead of one main spine with stubs.
-  for (let i = 0; i < cells.length; i++) {
-    if (!cells[i]) continue;
-    // Only check E (dir 1) and S (dir 2) to avoid evaluating each wall twice.
-    for (const d of [1, 2]) {
-      const nb = neighbor(i, d, cols, rows);
-      if (nb < 0 || !cells[nb]) continue;
-      const key = edgeKey(i, nb);
-      if (passages.has(key)) continue;
-      if (rng() < 0.14) passages.add(key);
+  // Extra long open corridors: 3 random-walk carves of 12-20 cells each.
+  // These produce visibly continuous open alternative routes (not the
+  // scattered pinprick openings the previous random-wall pass made).
+  const cellList: number[] = [];
+  for (let i = 0; i < cells.length; i++) if (cells[i]) cellList.push(i);
+  const numExtra = 3;
+  for (let k = 0; k < numExtra; k++) {
+    if (cellList.length === 0) break;
+    let cur = cellList[Math.floor(rng() * cellList.length)];
+    const steps = 12 + Math.floor(rng() * 9);
+    let lastDir = -1;
+    for (let s = 0; s < steps; s++) {
+      const dirs = [0, 1, 2, 3];
+      for (let i = dirs.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+      }
+      // Slight bias: avoid immediate reverse so the corridor stays
+      // visually directional rather than zig-zagging in place.
+      const reverse = lastDir === -1 ? -1 : (lastDir + 2) % 4;
+      let moved = false;
+      for (const d of dirs) {
+        if (d === reverse && rng() < 0.7) continue;
+        const nb = neighbor(cur, d, cols, rows);
+        if (nb >= 0 && cells[nb]) {
+          passages.add(edgeKey(cur, nb));
+          cur = nb;
+          lastDir = d;
+          moved = true;
+          break;
+        }
+      }
+      if (!moved) break;
     }
   }
 
