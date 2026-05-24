@@ -13,6 +13,9 @@ const REEL_H = 1920;
 const REEL_SECONDS = REEL_TIMING.duration;
 const MUSIC_TIMING: MusicTiming = {
   titlePopAt: REEL_TIMING.titleStart,
+  // Anxious tick-tock only after the maze is fully on screen — no tension
+  // during the title intro.
+  bedStart: REEL_TIMING.mazeEnd,
   countdownStart: REEL_TIMING.countdownStart,
   walkStart: REEL_TIMING.walkStart,
   walkEnd: REEL_TIMING.walkEnd,

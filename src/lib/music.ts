@@ -8,6 +8,9 @@
 export interface MusicTiming {
   /** Seconds from t=0 when the title bounces in. */
   titlePopAt: number;
+  /** Seconds from t=0 when the anxious clock-tick bed begins. Defaults to 0
+   *  if omitted (original maze-reels behaviour). */
+  bedStart?: number;
   /** Seconds from t=0 when the 3-2-1 countdown begins (one beep per second). */
   countdownStart: number;
   /** Seconds from t=0 when the mascot starts walking. The anxious clock
@@ -46,12 +49,13 @@ export function setupReelMusic(
   bedGain.gain.value = 1;
   bedGain.connect(master);
 
-  const bedEnd = Math.min(durationSec, timing.walkStart);
-  scheduleAnxiousBed(ctx, bedGain, start, bedEnd);
+  const bedStartOffset = Math.max(0, Math.min(timing.bedStart ?? 0, timing.walkStart));
+  const bedDur = Math.max(0, Math.min(durationSec, timing.walkStart) - bedStartOffset);
+  scheduleAnxiousBed(ctx, bedGain, start + bedStartOffset, bedDur);
 
   // Fade the bed over the last 1.0 s before walk start. Linear from
   // full -> silence, then a tiny ramp-out to zero to avoid any click.
-  const fadeStart = start + Math.max(0, timing.walkStart - 1.0);
+  const fadeStart = start + Math.max(bedStartOffset, timing.walkStart - 1.0);
   const fadeEnd = start + timing.walkStart;
   bedGain.gain.setValueAtTime(1, fadeStart);
   bedGain.gain.linearRampToValueAtTime(0, fadeEnd);
