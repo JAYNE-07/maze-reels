@@ -211,10 +211,16 @@ export function generateMaze(
   const root = cells.indexOf(true);
   const stack = [root];
   visited[root] = 1;
-  // Classic recursive-backtracker: always extend the deepest cell, giving
-  // a clean perfect maze with long winding corridors.
+  // Growing-tree carver, 40% random-pick: still a perfect maze (exactly
+  // one path between any two cells, so only ONE route reaches the goal)
+  // but with more side branches off existing paths. Those branches LOOK
+  // like alternative ways but every one of them terminates in a wall.
   while (stack.length) {
-    const cur = stack[stack.length - 1];
+    const pickIdx =
+      stack.length > 3 && rng() < 0.4
+        ? Math.floor(rng() * stack.length)
+        : stack.length - 1;
+    const cur = stack[pickIdx];
     const dirs = [0, 1, 2, 3];
     for (let i = dirs.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
@@ -231,30 +237,7 @@ export function generateMaze(
         break;
       }
     }
-    if (!advanced) stack.pop();
-  }
-
-  // Open exactly 1-2 extra walls to create that many additional routes.
-  // The base maze is a clean single-solution perfect maze; these removals
-  // give the viewer 1-2 alternative ways to reach the goal without
-  // visually changing the maze's normal look.
-  const wallCandidates: Array<[number, number]> = [];
-  for (let i = 0; i < cells.length; i++) {
-    if (!cells[i]) continue;
-    for (const d of [1, 2]) {
-      const nb = neighbor(i, d, cols, rows);
-      if (nb < 0 || !cells[nb]) continue;
-      if (!passages.has(edgeKey(i, nb))) wallCandidates.push([i, nb]);
-    }
-  }
-  for (let i = wallCandidates.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [wallCandidates[i], wallCandidates[j]] = [wallCandidates[j], wallCandidates[i]];
-  }
-  const removeCount = 1 + Math.floor(rng() * 2); // 1 or 2
-  for (let i = 0; i < Math.min(removeCount, wallCandidates.length); i++) {
-    const [a, b] = wallCandidates[i];
-    passages.add(edgeKey(a, b));
+    if (!advanced) stack.splice(pickIdx, 1);
   }
 
   const bbox = { minR: rows, maxR: 0, minC: cols, maxC: 0 };
