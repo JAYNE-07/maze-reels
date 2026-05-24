@@ -65,6 +65,7 @@ interface CompletedReel {
   index: number;
   blob: Blob;
   url: string;
+  poster: string;
   filename: string;
   paletteName: string;
   selected: boolean;
@@ -273,6 +274,7 @@ export default function App() {
         index: i + 1,
         blob: result.blob,
         url,
+        poster: result.poster,
         filename,
         paletteName: palette.name,
         selected: true,
@@ -435,11 +437,12 @@ export default function App() {
               >
                 <video
                   src={r.url}
+                  poster={r.poster}
                   muted
                   loop
                   autoPlay
                   playsInline
-                  preload="auto"
+                  preload="metadata"
                 />
                 <div className="card-row">
                   <input

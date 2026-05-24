@@ -12,6 +12,9 @@ export interface RecordResult {
   blob: Blob;
   mimeType: string;
   extension: string;
+  /** Final-frame JPEG data URL used as the gallery <video> poster so cards
+   *  show the solved maze even if the browser refuses to autoplay 8 videos. */
+  poster: string;
 }
 
 function pickMime(): { mime: string; ext: string } {
@@ -164,5 +167,6 @@ export async function recordCanvas(
   if (!blob.size) {
     throw new Error('recorder produced no data');
   }
-  return { blob, mimeType: mime, extension: ext };
+  const poster = recordCv.toDataURL('image/jpeg', 0.7);
+  return { blob, mimeType: mime, extension: ext, poster };
 }
