@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateMaze } from './lib/maze';
 import { fetchSilhouette, maskGrid } from './lib/shape';
 import { fetchMarkers } from './lib/markers';
-import { baseSubjectFor, subjectFor } from './lib/themes';
+import { baseSubjectFor, subjectFor, CANONICAL_KEYWORDS } from './lib/themes';
 import { PALETTES, type Palette } from './lib/palettes';
 import { buildScene, drawFrame, REEL_TIMING, type Scene } from './lib/animate';
 import { recordCanvas } from './lib/record';
@@ -329,11 +329,17 @@ export default function App() {
       <div className="panel">
         <label className="row">
           <span>Theme keyword</span>
-          <input
+          <select
+            className="keyword-select"
             value={keyword}
-            placeholder="animals, food, vehicles, jobs…"
             onChange={(e) => setKeyword(e.target.value)}
-          />
+          >
+            {CANONICAL_KEYWORDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="row">
           <span>How many reels</span>
