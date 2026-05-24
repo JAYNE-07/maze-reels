@@ -211,13 +211,13 @@ export function generateMaze(
   const root = cells.indexOf(true);
   const stack = [root];
   visited[root] = 1;
-  // Growing-tree carver, 40% random-pick: still a perfect maze (exactly
+  // Growing-tree carver, 55% random-pick: still a perfect maze (exactly
   // one path between any two cells, so only ONE route reaches the goal)
-  // but with more side branches off existing paths. Those branches LOOK
-  // like alternative ways but every one of them terminates in a wall.
+  // but with even more side branches off existing paths. Those branches
+  // LOOK like alternative ways but every one of them terminates in a wall.
   while (stack.length) {
     const pickIdx =
-      stack.length > 3 && rng() < 0.4
+      stack.length > 3 && rng() < 0.55
         ? Math.floor(rng() * stack.length)
         : stack.length - 1;
     const cur = stack[pickIdx];
