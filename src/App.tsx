@@ -19,7 +19,7 @@ const MUSIC_TIMING: MusicTiming = {
   ctaAt: REEL_TIMING.ctaStart,
 };
 const REEL_FPS = 30;
-const COLS_FOR_REEL = 16; // moderate grid - enough room for a few fake branches but still readable
+const COLS_FOR_REEL = 19; // denser grid for visibly harder mazes with many branches + loops
 
 // Subject-agnostic so a missed AI fetch never makes the title lie.
 const TITLES = [

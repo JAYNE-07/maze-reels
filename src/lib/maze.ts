@@ -211,14 +211,12 @@ export function generateMaze(
   const root = cells.indexOf(true);
   const stack = [root];
   visited[root] = 1;
-  // Growing-tree carver: most of the time it acts like a recursive
-  // backtracker (long winding corridors), but ~35% of iterations pick a
-  // random earlier cell from the stack so the maze branches off existing
-  // paths. Result: same single-solution guarantee, but visibly more
-  // dead-end side passages that confuse the eye.
+  // Growing-tree carver: 55% of iterations pick a random earlier cell
+  // from the frontier (vs. always-deepest), giving short branches off
+  // existing paths and producing many more dead-end side passages.
   while (stack.length) {
     const pickIdx =
-      stack.length > 3 && rng() < 0.35
+      stack.length > 3 && rng() < 0.55
         ? Math.floor(rng() * stack.length)
         : stack.length - 1;
     const cur = stack[pickIdx];
@@ -239,6 +237,51 @@ export function generateMaze(
       }
     }
     if (!advanced) stack.splice(pickIdx, 1);
+  }
+
+  // Aggressive braiding: ~85% of dead-ends get a wall punched out so
+  // they no longer terminate. With low braiding rates the "alternatives"
+  // looked like obvious stubs; at 85% almost every branch continues into
+  // another corridor instead of closing off after one cell.
+  const deadEnds: number[] = [];
+  for (let i = 0; i < cells.length; i++) {
+    if (!cells[i]) continue;
+    let degree = 0;
+    for (let d = 0; d < 4; d++) {
+      const nb = neighbor(i, d, cols, rows);
+      if (nb >= 0 && cells[nb] && passages.has(edgeKey(i, nb))) degree++;
+    }
+    if (degree === 1) deadEnds.push(i);
+  }
+  for (const idx of deadEnds) {
+    if (rng() > 0.85) continue;
+    const candidates: number[] = [];
+    for (let d = 0; d < 4; d++) {
+      const nb = neighbor(idx, d, cols, rows);
+      if (nb >= 0 && cells[nb] && !passages.has(edgeKey(idx, nb))) {
+        candidates.push(nb);
+      }
+    }
+    if (candidates.length > 0) {
+      const nb = candidates[Math.floor(rng() * candidates.length)];
+      passages.add(edgeKey(idx, nb));
+    }
+  }
+
+  // Extra mid-corridor openings: knock out ~14% of remaining interior
+  // walls anywhere (not just at dead-ends). This produces cross-junctions
+  // along long corridors, so the viewer sees several long competing
+  // routes between start and goal instead of one main spine with stubs.
+  for (let i = 0; i < cells.length; i++) {
+    if (!cells[i]) continue;
+    // Only check E (dir 1) and S (dir 2) to avoid evaluating each wall twice.
+    for (const d of [1, 2]) {
+      const nb = neighbor(i, d, cols, rows);
+      if (nb < 0 || !cells[nb]) continue;
+      const key = edgeKey(i, nb);
+      if (passages.has(key)) continue;
+      if (rng() < 0.14) passages.add(key);
+    }
   }
 
   const bbox = { minR: rows, maxR: 0, minC: cols, maxC: 0 };
