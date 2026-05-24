@@ -141,15 +141,23 @@ export async function recordCanvas(
   await new Promise<void>((resolve) => {
     const tick = (now: number) => {
       const t = (now - start) / 1000;
-      if (t >= durationSec) {
-        drawFrame(recordCtx, durationSec);
+      try {
+        if (t >= durationSec) {
+          drawFrame(recordCtx, durationSec);
+          previewCtx.drawImage(recordCv, 0, 0);
+          resolve();
+          return;
+        }
+        drawFrame(recordCtx, t);
         previewCtx.drawImage(recordCv, 0, 0);
+        requestAnimationFrame(tick);
+      } catch (err) {
+        // A bad frame would otherwise hang the rAF loop forever while the
+        // MediaRecorder keeps capturing the last good frame. Log it and
+        // resolve so the reel still finalises whatever it had.
+        console.error('drawFrame failed at t=', t.toFixed(2), err);
         resolve();
-        return;
       }
-      drawFrame(recordCtx, t);
-      previewCtx.drawImage(recordCv, 0, 0);
-      requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });
