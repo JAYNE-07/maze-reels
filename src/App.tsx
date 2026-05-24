@@ -19,7 +19,7 @@ const MUSIC_TIMING: MusicTiming = {
   ctaAt: REEL_TIMING.ctaStart,
 };
 const REEL_FPS = 30;
-const COLS_FOR_REEL = 14; // smaller grid -> bigger cells, much easier to solve in the think-time
+const COLS_FOR_REEL = 16; // moderate grid - enough room for a few fake branches but still readable
 
 // Subject-agnostic so a missed AI fetch never makes the title lie.
 const TITLES = [

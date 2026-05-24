@@ -211,8 +211,17 @@ export function generateMaze(
   const root = cells.indexOf(true);
   const stack = [root];
   visited[root] = 1;
+  // Growing-tree carver: most of the time it acts like a recursive
+  // backtracker (long winding corridors), but ~35% of iterations pick a
+  // random earlier cell from the stack so the maze branches off existing
+  // paths. Result: same single-solution guarantee, but visibly more
+  // dead-end side passages that confuse the eye.
   while (stack.length) {
-    const cur = stack[stack.length - 1];
+    const pickIdx =
+      stack.length > 3 && rng() < 0.35
+        ? Math.floor(rng() * stack.length)
+        : stack.length - 1;
+    const cur = stack[pickIdx];
     const dirs = [0, 1, 2, 3];
     for (let i = dirs.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
@@ -229,7 +238,7 @@ export function generateMaze(
         break;
       }
     }
-    if (!advanced) stack.pop();
+    if (!advanced) stack.splice(pickIdx, 1);
   }
 
   const bbox = { minR: rows, maxR: 0, minC: cols, maxC: 0 };
