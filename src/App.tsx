@@ -22,7 +22,7 @@ const MUSIC_TIMING: MusicTiming = {
   ctaAt: REEL_TIMING.ctaStart,
 };
 const REEL_FPS = 30;
-const COLS_FOR_REEL = 17; // denser grid for a noticeably harder maze (still clean walls)
+const COLS_FOR_REEL = 21; // bumped one level harder — denser grid, longer solution path
 
 // Subject-agnostic so a missed AI fetch never makes the title lie.
 const TITLES = [
