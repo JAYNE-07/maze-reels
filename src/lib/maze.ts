@@ -211,15 +211,10 @@ export function generateMaze(
   const root = cells.indexOf(true);
   const stack = [root];
   visited[root] = 1;
-  // Growing-tree carver: only 25% random-pick — mostly recursive-backtracker
-  // behaviour, which produces long winding corridors instead of jaggy
-  // short stubs.
+  // Classic recursive-backtracker: always extend the deepest cell, giving
+  // a clean perfect maze with long winding corridors.
   while (stack.length) {
-    const pickIdx =
-      stack.length > 3 && rng() < 0.25
-        ? Math.floor(rng() * stack.length)
-        : stack.length - 1;
-    const cur = stack[pickIdx];
+    const cur = stack[stack.length - 1];
     const dirs = [0, 1, 2, 3];
     for (let i = dirs.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
@@ -236,71 +231,30 @@ export function generateMaze(
         break;
       }
     }
-    if (!advanced) stack.splice(pickIdx, 1);
+    if (!advanced) stack.pop();
   }
 
-  // Moderate braiding: ~40% of dead-ends get punched out so most stubs
-  // become loops, but we don't shred every wall (otherwise the maze
-  // reads as noise).
-  const deadEnds: number[] = [];
+  // Open exactly 1-2 extra walls to create that many additional routes.
+  // The base maze is a clean single-solution perfect maze; these removals
+  // give the viewer 1-2 alternative ways to reach the goal without
+  // visually changing the maze's normal look.
+  const wallCandidates: Array<[number, number]> = [];
   for (let i = 0; i < cells.length; i++) {
     if (!cells[i]) continue;
-    let degree = 0;
-    for (let d = 0; d < 4; d++) {
+    for (const d of [1, 2]) {
       const nb = neighbor(i, d, cols, rows);
-      if (nb >= 0 && cells[nb] && passages.has(edgeKey(i, nb))) degree++;
-    }
-    if (degree === 1) deadEnds.push(i);
-  }
-  for (const idx of deadEnds) {
-    if (rng() > 0.4) continue;
-    const candidates: number[] = [];
-    for (let d = 0; d < 4; d++) {
-      const nb = neighbor(idx, d, cols, rows);
-      if (nb >= 0 && cells[nb] && !passages.has(edgeKey(idx, nb))) {
-        candidates.push(nb);
-      }
-    }
-    if (candidates.length > 0) {
-      const nb = candidates[Math.floor(rng() * candidates.length)];
-      passages.add(edgeKey(idx, nb));
+      if (nb < 0 || !cells[nb]) continue;
+      if (!passages.has(edgeKey(i, nb))) wallCandidates.push([i, nb]);
     }
   }
-
-  // Extra long open corridors: 5 random-walk carves of 8-14 cells each
-  // (sized for the 14-col grid). These produce visibly continuous open
-  // alternative routes that span a meaningful fraction of the maze.
-  const cellList: number[] = [];
-  for (let i = 0; i < cells.length; i++) if (cells[i]) cellList.push(i);
-  const numExtra = 5;
-  for (let k = 0; k < numExtra; k++) {
-    if (cellList.length === 0) break;
-    let cur = cellList[Math.floor(rng() * cellList.length)];
-    const steps = 8 + Math.floor(rng() * 7);
-    let lastDir = -1;
-    for (let s = 0; s < steps; s++) {
-      const dirs = [0, 1, 2, 3];
-      for (let i = dirs.length - 1; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1));
-        [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
-      }
-      // Slight bias: avoid immediate reverse so the corridor stays
-      // visually directional rather than zig-zagging in place.
-      const reverse = lastDir === -1 ? -1 : (lastDir + 2) % 4;
-      let moved = false;
-      for (const d of dirs) {
-        if (d === reverse && rng() < 0.7) continue;
-        const nb = neighbor(cur, d, cols, rows);
-        if (nb >= 0 && cells[nb]) {
-          passages.add(edgeKey(cur, nb));
-          cur = nb;
-          lastDir = d;
-          moved = true;
-          break;
-        }
-      }
-      if (!moved) break;
-    }
+  for (let i = wallCandidates.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [wallCandidates[i], wallCandidates[j]] = [wallCandidates[j], wallCandidates[i]];
+  }
+  const removeCount = 1 + Math.floor(rng() * 2); // 1 or 2
+  for (let i = 0; i < Math.min(removeCount, wallCandidates.length); i++) {
+    const [a, b] = wallCandidates[i];
+    passages.add(edgeKey(a, b));
   }
 
   const bbox = { minR: rows, maxR: 0, minC: cols, maxC: 0 };
