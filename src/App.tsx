@@ -13,10 +13,9 @@ const REEL_H = 1920;
 const REEL_SECONDS = REEL_TIMING.duration;
 const MUSIC_TIMING: MusicTiming = {
   titlePopAt: REEL_TIMING.titleStart,
-  // Anxious tick-tock starts ~0.7 s AFTER the maze has fully faded in,
-  // so the viewer gets a clear settle moment to take in the maze before
-  // tension builds.
-  bedStart: REEL_TIMING.mazeEnd + 0.7,
+  // Anxious tick-tock starts ~0.3 s BEFORE the maze finishes fading in,
+  // so tension builds with the maze, not after a long settle.
+  bedStart: REEL_TIMING.mazeEnd - 0.3,
   countdownStart: REEL_TIMING.countdownStart,
   walkStart: REEL_TIMING.walkStart,
   walkEnd: REEL_TIMING.walkEnd,
