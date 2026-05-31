@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateMaze } from './lib/maze';
 import { fetchSilhouette, maskGrid } from './lib/shape';
 import { fetchMarkers } from './lib/markers';
-import { baseSubjectFor, subjectFor, CANONICAL_KEYWORDS } from './lib/themes';
+import { baseSubjectFor, subjectFor, PRIMARY_KEYWORDS } from './lib/themes';
 import { PALETTES, type Palette } from './lib/palettes';
 import { buildScene, drawFrame, REEL_TIMING, type Scene } from './lib/animate';
 import { recordCanvas } from './lib/record';
@@ -337,9 +337,9 @@ export default function App() {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
           >
-            {CANONICAL_KEYWORDS.map((k) => (
-              <option key={k} value={k}>
-                {k}
+            {PRIMARY_KEYWORDS.map(({ label, key }) => (
+              <option key={key} value={key}>
+                {label}
               </option>
             ))}
           </select>
