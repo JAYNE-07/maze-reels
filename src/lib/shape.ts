@@ -105,220 +105,114 @@ export async function fetchSilhouette(
   seed: number,
   opts: ShapeOpts = {},
 ): Promise<Silhouette> {
-  // Primary: free AI image generation. Skip entirely when the caller has
-  // already given up on AI (final fallback round in book.ts).
+  // Primary: free AI image generation. Two attempts with different seeds —
+  // the second only fires if the first either timed out or returned a
+  // shape outside the usable fill range. Procedural fallback below catches
+  // anything past that, so the batch never stalls.
   if (!opts.skipAI) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const img = await loadImage(
           pollinationsUrl(keyword, seed + attempt * 1009),
-          20000,
+          8000,
         );
         const dark = rasterize(img);
         const filled = dark.reduce((a, b) => a + b, 0) / dark.length;
-        // Narrower band -> all shapes carry similar maze complexity.
         if (filled > 0.18 && filled < 0.55) return { dark, source: 'ai' };
       } catch {
-        await new Promise<void>((r) => setTimeout(r, 600));
+        /* try next attempt or fall through */
       }
     }
   }
 
-  // Fallback: free icon library, but only if its slug actually matches.
+  // Fallback 1: free icon library, but only if its slug actually matches.
   try {
     const url = await iconifyUrl(opts.iconSearch ?? keyword);
     if (url) {
-      const img = await loadImage(url, 12000);
+      const img = await loadImage(url, 6000);
       return { dark: rasterize(img), source: 'icon' };
     }
   } catch {
     /* fall through */
   }
 
-  // Last-resort built-in geometric shape — guarantees a reel slot always
-  // fills, AND varies by seed so a heavily-throttled batch still gets
-  // five different silhouettes instead of five identical discs.
-  return defaultSilhouette(seed);
+  // Fallback 2: a procedural silhouette so we NEVER throw. The shape isn't
+  // on-theme but the maze fills it anyway — much better than hanging the
+  // batch or skipping a slot. We mix the keyword into the seed so different
+  // keywords produce visually distinct procedural sets (otherwise switching
+  // from "animals" to "vehicles" would yield the same generic shapes).
+  return { dark: proceduralSilhouette(seed, keyword), source: 'icon' };
 }
 
-function defaultSilhouette(seed: number): Silhouette {
-  const cv = document.createElement('canvas');
-  cv.width = SAMPLE;
-  cv.height = SAMPLE;
-  const ctx = cv.getContext('2d')!;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, SAMPLE, SAMPLE);
-  ctx.fillStyle = '#000000';
-  const idx = ((seed >>> 0) % FALLBACK_SHAPES.length + FALLBACK_SHAPES.length) % FALLBACK_SHAPES.length;
-  FALLBACK_SHAPES[idx](ctx, SAMPLE);
-  const data = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
+/** One of 12 base procedural silhouettes, plus a per-subject rotation and
+ *  scale so each maze in a book gets a visually distinct shape — even when
+ *  the whole batch falls through to procedural (e.g. Pollinations is down).
+ *  Mixing the keyword's hash into the variant selector means "animals" and
+ *  "vehicles" never pick the same shape index for the same maze index. */
+function proceduralSilhouette(seed: number, keyword: string): Uint8Array {
+  // djb2 hash of the keyword/subject string so it deterministically perturbs
+  // the seed without ever colliding across different keywords.
+  let h = 5381 >>> 0;
+  for (let i = 0; i < keyword.length; i++) {
+    h = (((h << 5) + h) ^ keyword.charCodeAt(i)) >>> 0;
+  }
+  const mixed = (seed ^ h) >>> 0;
+
   const dark = new Uint8Array(SAMPLE * SAMPLE);
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    if (data[i] < 128) dark[p] = 1;
+  const cx = SAMPLE / 2;
+  const cy = SAMPLE / 2;
+  const scale = 0.78 + ((mixed >>> 12) % 7) * 0.04; // 0.78 .. 1.02
+  const r = SAMPLE * 0.42 * scale;
+  const variant = (mixed % 12);
+  const rot = ((mixed >>> 4) % 360) * (Math.PI / 180);
+  const cosR = Math.cos(rot);
+  const sinR = Math.sin(rot);
+  const set = (x: number, y: number) => {
+    if (x >= 0 && x < SAMPLE && y >= 0 && y < SAMPLE) dark[y * SAMPLE + x] = 1;
+  };
+  for (let y = 0; y < SAMPLE; y++) {
+    for (let x = 0; x < SAMPLE; x++) {
+      // Rotate the sample point around the centre so the variant test sees
+      // a rotated coordinate — gives 360 distinct silhouettes per variant.
+      const rx = x - cx;
+      const ry = y - cy;
+      const dx = rx * cosR - ry * sinR;
+      const dy = rx * sinR + ry * cosR;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      let inside = false;
+      switch (variant) {
+        case 0: inside = d < r; break;                                    // disc
+        case 1: inside = Math.abs(dx) < r * 0.95 && Math.abs(dy) < r * 0.95; break; // square
+        case 2: { // heart-ish
+          const X = dx / r, Y = -dy / r;
+          const v = (X * X + Y * Y - 1) ** 3 - X * X * Y * Y * Y;
+          inside = v < 0;
+          break;
+        }
+        case 3: inside = d < r * (1 + 0.2 * Math.sin(Math.atan2(dy, dx) * 5)); break; // star
+        case 4: { // hexagon
+          const ax = Math.abs(dx), ay = Math.abs(dy);
+          inside = ay < r * 0.866 && ax * 0.5 + ay * 0.866 < r * 0.866;
+          break;
+        }
+        case 5: inside = Math.abs(dx) + Math.abs(dy) < r * 1.15; break;  // diamond
+        case 6: inside = (Math.abs(dx) < r * 0.3 || Math.abs(dy) < r * 0.3) && d < r; break; // cross
+        case 7: { // cloud
+          const blobs = [[-r * 0.5, 0, r * 0.55], [r * 0.5, 0, r * 0.55], [0, -r * 0.25, r * 0.6]];
+          for (const [bx, by, br] of blobs) {
+            if ((dx - bx) ** 2 + (dy - by) ** 2 < br * br) { inside = true; break; }
+          }
+          break;
+        }
+        case 8: inside = dy > -r * 0.9 && Math.abs(dx) < (r * 0.9 - dy * 0.5); break; // triangle
+        case 9: inside = (dx * dx) / (r * r) + (dy * dy) / (r * r * 0.65 * 0.65) < 1; break; // oval
+        case 10: inside = d < r * (1 + 0.25 * Math.sin(Math.atan2(dy, dx) * 6)); break; // 6-star
+        default: inside = Math.abs(dx) < r * 0.4 && dy < r * 0.7 && dy > -r * 0.95; // arrow
+      }
+      if (inside) set(x, y);
+    }
   }
-  return { dark, source: 'icon' };
-}
-
-type ShapeDrawer = (ctx: CanvasRenderingContext2D, S: number) => void;
-
-const FALLBACK_SHAPES: ShapeDrawer[] = [
-  // 0: disc
-  (ctx, S) => {
-    ctx.beginPath();
-    ctx.arc(S / 2, S / 2, S * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-  },
-  // 1: rounded square
-  (ctx, S) => roundedRect(ctx, S * 0.16, S * 0.16, S * 0.68, S * 0.68, S * 0.12),
-  // 2: heart
-  (ctx, S) => drawHeart(ctx, S / 2, S * 0.55, S * 0.42),
-  // 3: 5-point star
-  (ctx, S) => drawStar(ctx, S / 2, S / 2, S * 0.46, 5, 0.42),
-  // 4: hexagon
-  (ctx, S) => drawPolygon(ctx, S / 2, S / 2, S * 0.44, 6, 0),
-  // 5: diamond (rotated square)
-  (ctx, S) => drawPolygon(ctx, S / 2, S / 2, S * 0.44, 4, Math.PI / 4),
-  // 6: plus / cross
-  (ctx, S) => drawCross(ctx, S / 2, S / 2, S * 0.42, S * 0.18),
-  // 7: cloud (overlapping bumps)
-  (ctx, S) => drawCloud(ctx, S / 2, S / 2, S * 0.4),
-  // 8: triangle
-  (ctx, S) => drawPolygon(ctx, S / 2, S * 0.56, S * 0.46, 3, 0),
-  // 9: oval / egg
-  (ctx, S) => {
-    ctx.beginPath();
-    ctx.ellipse(S / 2, S / 2, S * 0.36, S * 0.46, 0, 0, Math.PI * 2);
-    ctx.fill();
-  },
-  // 10: 6-point star
-  (ctx, S) => drawStar(ctx, S / 2, S / 2, S * 0.46, 6, 0.45),
-  // 11: arrow (right-pointing chevron)
-  (ctx, S) => drawArrow(ctx, S / 2, S / 2, S * 0.46),
-];
-
-function roundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawPolygon(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  n: number,
-  rotate: number,
-) {
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const a = -Math.PI / 2 + rotate + (i * Math.PI * 2) / n;
-    const px = cx + Math.cos(a) * r;
-    const py = cy + Math.sin(a) * r;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawStar(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  points: number,
-  innerRatio: number,
-) {
-  ctx.beginPath();
-  for (let i = 0; i < points * 2; i++) {
-    const a = -Math.PI / 2 + (i * Math.PI) / points;
-    const rad = i % 2 === 0 ? r : r * innerRatio;
-    const px = cx + Math.cos(a) * rad;
-    const py = cy + Math.sin(a) * rad;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawHeart(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-) {
-  ctx.beginPath();
-  const top = cy - r * 0.6;
-  ctx.moveTo(cx, top + r * 0.3);
-  ctx.bezierCurveTo(cx - r * 1.05, top - r * 0.45, cx - r * 1.25, top + r * 0.65, cx, cy + r * 0.85);
-  ctx.bezierCurveTo(cx + r * 1.25, top + r * 0.65, cx + r * 1.05, top - r * 0.45, cx, top + r * 0.3);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawCross(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  arm: number,
-  thick: number,
-) {
-  ctx.beginPath();
-  ctx.rect(cx - thick, cy - arm, thick * 2, arm * 2);
-  ctx.rect(cx - arm, cy - thick, arm * 2, thick * 2);
-  ctx.fill();
-}
-
-function drawCloud(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-) {
-  ctx.beginPath();
-  ctx.arc(cx - r * 0.55, cy + r * 0.15, r * 0.5, 0, Math.PI * 2);
-  ctx.arc(cx, cy - r * 0.2, r * 0.6, 0, Math.PI * 2);
-  ctx.arc(cx + r * 0.55, cy + r * 0.15, r * 0.5, 0, Math.PI * 2);
-  ctx.arc(cx - r * 0.2, cy + r * 0.35, r * 0.5, 0, Math.PI * 2);
-  ctx.arc(cx + r * 0.2, cy + r * 0.35, r * 0.5, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawArrow(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-) {
-  ctx.beginPath();
-  // body + arrowhead
-  ctx.moveTo(cx - r, cy - r * 0.3);
-  ctx.lineTo(cx + r * 0.2, cy - r * 0.3);
-  ctx.lineTo(cx + r * 0.2, cy - r * 0.7);
-  ctx.lineTo(cx + r, cy);
-  ctx.lineTo(cx + r * 0.2, cy + r * 0.7);
-  ctx.lineTo(cx + r * 0.2, cy + r * 0.3);
-  ctx.lineTo(cx - r, cy + r * 0.3);
-  ctx.closePath();
-  ctx.fill();
+  return dark;
 }
 
 /** Sample the silhouette into a cols x rows boolean grid (row-major). */
