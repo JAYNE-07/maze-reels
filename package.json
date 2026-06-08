@@ -20,5 +20,18 @@
     "@vitejs/plugin-react": "^4.3.1",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
-  }
+  },
+  "description": "Produces 9:16 Instagram reels promoting the [maze book](https://jayne-07.github.io/maze-generator/). Each 8 s reel: themed maze appears, mascot walks the solution path, CTA card slides up. Every reel uses a different shape (from the same 165-keyword dictionary as the book) and a different brand palette.",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JAYNE-07/maze-reels.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JAYNE-07/maze-reels/issues"
+  },
+  "homepage": "https://github.com/JAYNE-07/maze-reels#readme"
 }
